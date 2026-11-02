@@ -106,7 +106,7 @@ public sealed class AdditiveSceneExample
 
     public async UniTask UnloadWeatherScene()
     {
-        await GameApp.Scene.UnloadAsync("Assets/Bundles/Scenes/WeatherRain.unity");
+        await GameApp.Scene.UnloadSubSceneAsync("Assets/Bundles/Scenes/WeatherRain.unity");
     }
 }
 ```
@@ -160,8 +160,8 @@ bool contains = GameApp.Scene.IsContainScene("Assets/Bundles/Scenes/WeatherRain.
 | --- | --- |
 | `LoadSceneAsync(location, mode, ...)` | 异步加载场景 |
 | `LoadScene(location, mode, ...)` | 回调式加载场景 |
-| `UnloadAsync(location, progress)` | 异步卸载附加场景 |
-| `Unload(location, callback, progress)` | 回调式卸载附加场景 |
+| `UnloadSubSceneAsync(location, gcCollect, progress)` | 异步卸载附加场景 |
+| `UnloadSubScene(location, callback, gcCollect, progress)` | 回调式卸载附加场景 |
 | `ActivateScene(location)` | 激活已加载场景 |
 | `UnSuspend(location)` | 解除挂起加载 |
 | `IsContainScene(location)` | 判断主场景或附加场景是否存在 |
@@ -171,7 +171,7 @@ bool contains = GameApp.Scene.IsContainScene("Assets/Bundles/Scenes/WeatherRain.
 ## 注意事项
 
 1. 主场景加载会重置 Scene 作用域，场景级服务会被销毁并重新创建。
-2. `Unload` 和 `UnloadAsync` 只处理附加场景，主场景应通过加载新的 Single 场景替换。
+2. `UnloadSubScene` 和 `UnloadSubSceneAsync` 只处理附加场景，主场景应通过加载新的 Single 场景替换。
 3. 不要在同一个场景地址仍在加载或卸载时重复操作，框架会拒绝并输出日志。
 4. 场景地址需要与 YooAsset 可识别的 location 一致。
 5. `progressCallBack` 存在时，框架会每帧回调进度直到操作完成。

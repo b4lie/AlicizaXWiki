@@ -81,7 +81,7 @@ GameApp.Timer.AddTimer(() =>
 }, 1f);
 ```
 
-`GameApp` 内部使用 `AppServices.RequireApp<T>()`，因此调用前要保证对应组件已经完成注册。
+`GameApp` 内部使用 `AppServices.App.Require<T>()`，因此调用前要保证对应组件已经完成注册。
 
 ## 服务作用域
 
@@ -99,7 +99,7 @@ Gameplay > Scene > App
 
 也就是说，如果同一个服务契约在 Gameplay 和 App 都注册过，`AppServices.Require<T>()` 会优先返回 Gameplay 中的服务。
 
-Scene 模块加载主场景时会调用 `Context.ResetScene()`，因此 Scene 作用域服务会随主场景切换销毁。
+Scene 模块加载主场景时会重置 Scene 作用域（`AppServices.Scene`），因此场景级服务会随主场景切换销毁。
 
 ## 自定义普通服务
 
@@ -137,7 +137,7 @@ public sealed class PlayerDataService : ServiceBase, IPlayerDataService
 注册到 App 作用域：
 
 ```csharp
-AppServices.RegisterApp<IPlayerDataService>(new PlayerDataService());
+AppServices.App.Register<IPlayerDataService>(new PlayerDataService());
 
 IPlayerDataService playerData = AppServices.Require<IPlayerDataService>();
 ```
@@ -256,12 +256,14 @@ AppServices.Shutdown();
 | API | 说明 |
 | --- | --- |
 | `AppServices.HasWorld` | 服务世界是否已创建 |
-| `AppServices.RegisterApp<TContract>(service)` | 注册 App 作用域服务 |
-| `AppServices.RegisterAppSelf(service)` | 用服务自身类型注册 |
+| `AppServices.App` / `.Scene` / `.Gameplay` | 三个服务作用域 |
+| `AppServices.App.Register<TContract>(service)` | 注册 App 作用域服务 |
+| `AppServices.App.RegisterSelf(service)` | 用服务自身类型注册 |
 | `AppServices.TryGet<T>(out service)` | 从所有活动作用域查找服务 |
 | `AppServices.Require<T>()` | 查找服务，找不到抛异常 |
-| `AppServices.TryGetApp<T>(out service)` | 只从 App 作用域查找 |
-| `AppServices.RequireApp<T>()` | 只从 App 作用域获取 |
+| `AppServices.App.TryGet<T>(out service)` | 只从 App 作用域查找 |
+| `AppServices.App.Require<T>()` | 只从 App 作用域获取 |
+| `AppServices.Scene` / `AppServices.Gameplay` | 取对应作用域，未创建时自动创建 |
 | `AppServices.Shutdown()` | 销毁整个服务世界 |
 | `ServiceBase` | 普通服务基类 |
 | `MonoServiceBehaviour<TScope>` | Mono 服务基类 |
@@ -270,7 +272,7 @@ AppServices.Shutdown();
 ## 注意事项
 
 1. `RootModule` 或其它 `AppServiceRoot` 必须先创建 `ServiceWorld`，否则注册和获取服务会失败。
-2. `RegisterApp<TContract>` 的服务对象必须实现服务生命周期接口，继承 `ServiceBase` 最省心。
+2. `AppServices.App.Register<TContract>` 的服务对象必须实现服务生命周期接口，继承 `ServiceBase` 最省心。
 3. 同一作用域内不能重复注册同一个契约类型。
 4. Scene 作用域会随主场景切换重置，不要把跨场景状态注册到 Scene 作用域。
 5. `GameApp` 会缓存服务引用，如果你做服务热替换，需要同步考虑缓存失效问题。

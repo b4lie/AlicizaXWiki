@@ -60,8 +60,18 @@ mkdocs build --strict
 
 ## 文档来源约定
 
-`docs/` 下的 12 篇模块文档是框架仓库 `Books/` 目录的镜像，当前保持 1:1 一致，唯一差异是
-`Event.md` 末尾两处指向不存在文件的链接已被降级为纯文本，避免站内 404。
+`docs/` 下的 12 篇模块文档来自框架仓库 `Books/` 目录。逐行比对后，除下列**已修正的差异**外与 `Books/` 完全一致：
+
+| 文件 | 修正内容 |
+| :--- | :--- |
+| `Event.md` | 两处指向不存在文件的链接降级为纯文本（避免 404） |
+| `Service.md` | 源码路径 `Runtime/ABase/*` → `Runtime/Core/*`；`AppServices.RegisterApp*` 等改为作用域式 `AppServices.App.Register*` |
+| `Procedure.md` / `Scene.md` / `Timer.md` | 源码路径补上 `Runtime/Modules/` 前缀 |
+| `Resources.md` | 源码路径去掉多余的 `/Resource` 后缀 |
+| `Scene.md` | 卸载 API 更正为 `UnloadSubScene` / `UnloadSubSceneAsync` |
+| `Timer.md` | 移除不存在的 `ITimerCapacityService.Prewarm`，改为 `GetStatistics` + `TrimExcess` |
+
+以上修正只发生在本仓库；`Books/` 仍是原始版本，需要的话可以反向同步回去。
 
 修改文档内容时请注意两侧同步；如果后续决定以本仓库为唯一写入点，再调整 `Books/` 的同步策略。
 

@@ -11,7 +11,12 @@ Timer 模块提供全局计时器服务，用于延迟执行、循环执行、�
 场景中的框架根节点需要挂载 `TimerComponent`。`TimerComponent` 会在 `Awake()` 中注册 `ITimerService`：
 
 ```csharp
-AppServices.RegisterApp<ITimerService>(new TimerService(_initialCapacity));
+if (AppServices.App.TryGet<ITimerService>(out _))
+{
+    return;
+}
+
+AppServices.App.Register<ITimerService>(new TimerService(_initialCapacity));
 ```
 
 `RootModule` 会驱动 `ServiceWorld.Tick`，Timer 服务在 Tick 中推进计时器。
@@ -183,21 +188,24 @@ ulong handle = timer.AddTimer(
     isUnscaled: true);
 ```
 
-## 预热容量
+## 容量与统计
 
-`TimerComponent` Inspector 中可以设置 `Initial Capacity`。运行时代码也可以通过 `ITimerCapacityService` 扩容。
+`TimerComponent` Inspector 里的 `Initial Capacity` 决定时间轮初始容量（默认 1024），容量不足时框架会自动扩容，空闲后可以主动回收。
 
 ```csharp
 using AlicizaX;
 using AlicizaX.Timer.Runtime;
+using UnityEngine;
 
-if (AppServices.Require<ITimerService>() is ITimerCapacityService capacityService)
-{
-    capacityService.Prewarm(2048);
-}
+ITimerService timer = AppServices.Require<ITimerService>();
+
+timer.GetStatistics(out int active, out int capacity, out int peak, out int free);
+Debug.Log($"active={active}, capacity={capacity}, peak={peak}, free={free}");
+
+timer.TrimExcess();  // 回收空闲页；正在派发计时器时调用会被忽略
 ```
 
-容量会按内部页大小对齐。大量创建计时器前预热，可以减少运行时扩容。
+大量创建计时器前，把 `Initial Capacity` 调大可以减少运行时扩容。
 
 ## 调试信息
 
