@@ -115,21 +115,22 @@ extra_css:
 nav:
   - 开始:
       - 首页: index.md
-      - 快速入门: QuickStart.md
+      - 概览: overview.md
+      - 快速入门: quickstart.md
   - 核心服务:
-      - Service 基础服务: Service.md
-      - Timer 计时器: Timer.md
-      - Event 事件: Event.md
-      - Procedure 流程: Procedure.md
+      - Service 基础服务: modules/service/index.md
+      - Timer 计时器: modules/timer/index.md
+      - Event 事件: modules/event/index.md
+      - Procedure 流程: modules/procedure/index.md
   - 资源与对象:
-      - Resources 资源: Resources.md
-      - Scene 场景: Scene.md
-      - GameObjectPool 实例池: GameObjectPool.md
-      - MemoryPool 内存池: MemoryPool.md
+      - Resources 资源: modules/resource/index.md
+      - Scene 场景: modules/scene/index.md
+      - GameObjectPool 实例池: modules/gameobjectpool/index.md
+      - MemoryPool 内存池: modules/memorypool/index.md
   - UI 与表现:
-      - UI 界面: UI.md
-      - Audio 音频: Audio.md
-      - Localization 本地化: Localization.md
+      - UI 界面: modules/ui/index.md
+      - Audio 音频: modules/audio/index.md
+      - Localization 本地化: modules/localization/index.md
 
 # --- 双语站点骨架（首版未启用，保持纯中文）---------------------------
 # 启用步骤：

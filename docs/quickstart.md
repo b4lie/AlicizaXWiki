@@ -511,19 +511,18 @@ await GameApp.Localization.SwitchLanguageAsync("English");
 ## 文档索引
 
 | 文档 | 内容 |
-| --- | --- |
-| `Service.md` | 服务容器、作用域、自定义服务 |
-| `MemoryPool.md` | 内存池、引用对象生命周期 |
-| `Timer.md` | 延迟、循环、暂停恢复计时器 |
-| `GameObjectPool.md` | GameObject 实例池 |
-| `Resources.md` | YooAsset 资源加载、下载、卸载 |
-| `Audio.md` | 音效、音乐、音量分组 |
-| `Event.md` | 事件总线 |
-| `Procedure.md` | 启动流程和流程状态机 |
-| `Scene.md` | 场景加载、挂起、卸载 |
-| `Localization.md` | 本地化表和语言切换 |
-| `UI.md` | UI 窗口、Widget、Tab、事件自动释放 |
-| `Debugger.md` | 运行时调试面板 |
+| :--- | :--- |
+| [Service 基础服务](modules/service/index.md) | 服务容器、作用域、自定义服务 |
+| [MemoryPool 内存池](modules/memorypool/index.md) | 内存池、引用对象生命周期 |
+| [Timer 计时器](modules/timer/index.md) | 延迟、循环、暂停恢复计时器 |
+| [GameObjectPool 实例池](modules/gameobjectpool/index.md) | GameObject 实例池 |
+| [Resources 资源](modules/resource/index.md) | YooAsset 资源加载、下载、卸载 |
+| [Audio 音频](modules/audio/index.md) | 音效、音乐、音量分组 |
+| [Event 事件](modules/event/index.md) | 事件总线 |
+| [Procedure 流程](modules/procedure/index.md) | 启动流程和流程状态机 |
+| [Scene 场景](modules/scene/index.md) | 场景加载、挂起、卸载 |
+| [Localization 本地化](modules/localization/index.md) | 本地化表和语言切换 |
+| [UI 界面](modules/ui/index.md) | UI 窗口、Widget、Tab、事件自动释放 |
 
 ## 接入顺序建议
 
