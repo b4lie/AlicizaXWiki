@@ -4,7 +4,7 @@ Procedure 模块提供流程状态机，适合启动流程、热更新流程、�
 
 源码位置：
 
-- `Client/Packages/com.alicizax.unity.framework/Runtime/Procedure`
+- `Client/Packages/com.alicizax.unity.framework/Runtime/Modules/Procedure`
 - 项目示例：`Client/Assets/Scripts/Startup/Procedure`
 
 ## 使用前提

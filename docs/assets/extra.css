@@ -1,72 +1,229 @@
-/* AlicizaX 文档站样式微调
-   theme.font 已关闭，这里补回系统字体栈，避免加载 Google Fonts。 */
+/* ===== 基础 ===================================================== */
+/* theme.font 已关闭，这里补回系统字体栈，避免加载 Google Fonts */
 :root {
   --md-text-font: "Segoe UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB",
     "Noto Sans SC", -apple-system, BlinkMacSystemFont, sans-serif;
-  --md-code-font: "Cascadia Mono", "JetBrains Mono", Consolas, "Courier New",
-    monospace;
+  --md-code-font: "Cascadia Mono", "JetBrains Mono", Consolas, "Courier New", monospace;
 }
 
-/* 中文正文行距略放宽，长段落更好读 */
 .md-typeset {
   line-height: 1.72;
 }
 
-/* 表格在小屏下允许横向滚动，避免挤压 */
-.md-typeset table:not([class]) {
-  display: table;
-  font-size: 0.74rem;
+/* 按配色方案切换 logo 变体（深色底用白色剪影） */
+[data-md-color-scheme="slate"] .only-light {
+  display: none !important;
 }
 
-/* 首页能力表格居中显示 */
-.md-typeset table.center-table {
-  margin-left: auto;
-  margin-right: auto;
+[data-md-color-scheme="default"] .only-dark {
+  display: none !important;
 }
 
-/* 首页 hero 区 */
+/* 顶部导航栏是靛蓝色，图标统一反白更清晰 */
+.md-header .md-logo img {
+  filter: brightness(0) invert(1);
+}
+
+/* ===== 首页 hero ================================================ */
 .md-typeset .hero {
+  position: relative;
+  margin: 0 0 2.8rem;
+  padding: 2.4rem 1.4rem 2rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 1rem;
   text-align: center;
-  margin: 1rem 0 2.4rem;
+  background:
+    radial-gradient(80% 140% at 50% -25%, rgba(63, 81, 181, 0.20), transparent 62%),
+    var(--md-default-bg-color);
 }
 
-.md-typeset .hero img {
-  margin: 0 auto 0.8rem;
-  border-radius: 16px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+[data-md-color-scheme="slate"] .md-typeset .hero {
+  background:
+    radial-gradient(80% 140% at 50% -25%, rgba(129, 140, 248, 0.30), transparent 62%),
+    var(--md-default-bg-color);
+}
+
+.md-typeset .hero-brand img {
+  display: block;
+  width: min(300px, 60%);
+  height: auto;
+  margin: 0 auto 1.1rem;
 }
 
 .md-typeset .hero h1 {
-  margin: 0.3rem 0 0.5rem;
-  border-bottom: none;
-  font-size: 1.55rem;
+  max-width: 30ch;
+  margin: 0.2rem auto 0.5rem;
+  border: none;
+  font-size: clamp(1.35rem, 2.2vw, 1.75rem);
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
+  line-height: 1.5;
 }
 
-/* 首页四张卡片固定两列，避免 3+1 的孤行
-   注意：Material 9.8 里 .grid.cards > ul 是 display:contents，栅格定义在容器上 */
+.md-typeset .hero > p {
+  max-width: 44rem;
+  margin: 0.4rem auto 1.3rem;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.8rem;
+  line-height: 1.85;
+}
+
+.md-typeset .hero .md-button {
+  margin: 0.2rem 0.3rem;
+}
+
+.md-typeset .hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+.md-typeset .hero-meta span {
+  padding: 0.24rem 0.72rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 999px;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.66rem;
+}
+
+.md-typeset .hero-meta b {
+  color: var(--md-primary-fg-color);
+  font-size: 0.78rem;
+}
+
+/* ===== 卡片 ===================================================== */
 .md-typeset .grid.cards {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.md-typeset .grid.cards.links {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.md-typeset .grid.cards > ul > li {
+  padding: 1.05rem 1.15rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.7rem;
+  background: var(--md-default-bg-color);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.md-typeset .grid.cards > ul > li:hover {
+  transform: translateY(-2px);
+  border-color: var(--md-primary-fg-color);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.md-typeset .grid.cards > ul > li > p:first-child {
+  margin-bottom: 0.2rem;
+  font-size: 0.8rem;
+}
+
+.md-typeset .grid.cards > ul > li > p:first-child .twemoji {
+  color: var(--md-primary-fg-color);
+}
+
+.md-typeset .grid.cards > ul > li > hr {
+  margin: 0.55rem 0 0.6rem;
+  border-color: var(--md-default-fg-color--lightest);
+}
+
+.md-typeset .grid.cards > ul > li > p:last-child {
+  margin-bottom: 0;
+  font-size: 0.72rem;
+}
+
+/* ===== 表格 ===================================================== */
+/* Material 默认把表格容器设为 inline-block 收缩宽度，这里改成整行铺满 */
+.md-typeset .md-typeset__table {
+  display: block;
+  width: 100%;
+  padding: 0;
+}
+
+.md-typeset table:not([class]) {
+  width: 100%;
+  font-size: 0.72rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.6rem;
+  overflow: hidden;
+}
+
+.md-typeset table:not([class]) th {
+  background: var(--md-default-fg-color--lightest);
+  font-weight: 700;
+}
+
+.md-typeset table:not([class]) td {
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-typeset table:not([class]) tbody tr:hover td {
+  background: rgba(63, 81, 181, 0.06);
+}
+
+/* ===== 步骤 ===================================================== */
+.md-typeset .steps ol {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.md-typeset .steps li {
+  position: relative;
+  margin-bottom: 1.05rem;
+  padding-left: 2.5rem;
+  counter-increment: step;
+}
+
+.md-typeset .steps li::before {
+  position: absolute;
+  top: 0.1rem;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 50%;
+  background: var(--md-primary-fg-color);
+  color: var(--md-primary-bg-color);
+  font-size: 0.64rem;
+  font-weight: 700;
+  content: counter(step);
+}
+
+.md-typeset .steps li > p {
+  margin: 0.1rem 0 0.15rem;
+}
+
+/* ===== 响应式 =================================================== */
+@media screen and (max-width: 60em) {
+  .md-typeset .grid.cards.links {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media screen and (max-width: 44.9375em) {
   .md-typeset .grid.cards {
     grid-template-columns: 1fr;
   }
+
+  .md-typeset .hero {
+    padding: 2.2rem 1rem 1.8rem;
+  }
+
+  .md-typeset .hero-brand img {
+    width: min(240px, 72%);
+  }
 }
 
-/* 桌面端隐藏侧边栏顶部的站点名（顶部导航栏已经有），移动端抽屉里保留 */
+/* 桌面端隐藏侧边栏顶部的站点名（顶部导航栏已有），移动端抽屉保留 */
 @media screen and (min-width: 76.25em) {
   .md-nav--primary > .md-nav__title {
     display: none;
   }
-}
-
-.md-typeset .hero p {
-  color: var(--md-default-fg-color--light);
-}
-
-.md-typeset .hero .md-button {
-  margin: 0.35rem 0.25rem 0;
 }

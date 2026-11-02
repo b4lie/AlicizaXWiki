@@ -6,7 +6,7 @@ Resources 模块是框架对 YooAsset 的资源服务封装，负责资源包初
 
 源码位置：
 
-- `Client/Packages/com.alicizax.unity.framework/Runtime/Modules/Resource/Resource`
+- `Client/Packages/com.alicizax.unity.framework/Runtime/Modules/Resource`
 
 运行时主要入口：
 

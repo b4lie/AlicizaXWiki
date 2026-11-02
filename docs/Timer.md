@@ -4,7 +4,7 @@ Timer 模块提供全局计时器服务，用于延迟执行、循环执行、�
 
 源码位置：
 
-- `Client/Packages/com.alicizax.unity.framework/Runtime/Timer`
+- `Client/Packages/com.alicizax.unity.framework/Runtime/Modules/Timer`
 
 ## 使用前提
 

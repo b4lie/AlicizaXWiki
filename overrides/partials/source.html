@@ -1,0 +1,12 @@
+{# 覆盖 Material 默认的仓库徽标：
+   顶部右上角固定指向框架仓库 AlicizaXTemplate，
+   而 repo_url 仍保留文档仓库，供「编辑此页」使用。 #}
+<a href="https://github.com/AlicizaX/AlicizaXTemplate" title="AlicizaX 框架仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    {% set icon = config.theme.icon.repo or "fontawesome/brands/git-alt" %}
+    {% include ".icons/" ~ icon ~ ".svg" %}
+  </div>
+  <div class="md-source__repository">
+    AlicizaX/AlicizaXTemplate
+  </div>
+</a>

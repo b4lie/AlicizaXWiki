@@ -4,7 +4,7 @@ Scene 模块是对 YooAsset 场景加载的服务封装，支持主场景加载�
 
 源码位置：
 
-- `Client/Packages/com.alicizax.unity.framework/Runtime/Scene`
+- `Client/Packages/com.alicizax.unity.framework/Runtime/Modules/Scene`
 
 ## 使用前提
 

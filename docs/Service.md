@@ -4,9 +4,9 @@ Service 是框架的基础服务容器，负责创建全局服务世界、注册
 
 源码位置：
 
-- `Client/Packages/com.alicizax.unity.framework/Runtime/ABase/Service`
-- `Client/Packages/com.alicizax.unity.framework/Runtime/ABase/RootModule.cs`
-- `Client/Packages/com.alicizax.unity.framework/Runtime/GameApp.cs`
+- `Client/Packages/com.alicizax.unity.framework/Runtime/Core/Service`
+- `Client/Packages/com.alicizax.unity.framework/Runtime/Core/Module/RootModule.cs`
+- `Client/Packages/com.alicizax.unity.framework/Runtime/Core/App/GameApp.cs`
 
 ## RootModule
 

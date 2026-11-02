@@ -6,14 +6,23 @@ hide:
 
 <div class="hero" markdown>
 
-![AlicizaX](assets/logo.png){ width="200" }
+<div class="hero-brand">
+  <img class="only-light" src="assets/logo.png" alt="AlicizaX">
+  <img class="only-dark" src="assets/logo-light.png" alt="AlicizaX">
+</div>
 
 # 面向商业化项目的 Unity 游戏框架
 
 服务容器、资源管线、UI 管理、事件与计时、对象池、热更——收敛成一套装好即用的骨架。
 
-[开始阅读](QuickStart.md){ .md-button .md-button--primary }
+[快速开始](QuickStart.md){ .md-button .md-button--primary }
 [框架仓库](https://github.com/AlicizaX/AlicizaXTemplate){ .md-button }
+
+<div class="hero-meta">
+  <span><b>11</b> 个模块</span>
+  <span><b>145</b> 段示例代码</span>
+  <span><b>0 GC</b> 高频事件</span>
+</div>
 
 </div>
 
@@ -21,15 +30,15 @@ hide:
 
 <div class="grid cards" markdown>
 
--   :material-rocket-launch-outline:{ .lg .middle } __快速入门__
+-   :material-rocket-launch-outline:{ .lg .middle } **快速入门**
 
     ---
 
-    启动链路、场景根节点、资源初始化、打开第一个 UI。
+    从 RootModule 启动到打开第一个 UI，跑通最小链路。
 
     [:octicons-arrow-right-24: QuickStart](QuickStart.md)
 
--   :material-puzzle-outline:{ .lg .middle } __核心服务__
+-   :material-cog-outline:{ .lg .middle } **核心服务**
 
     ---
 
@@ -37,7 +46,7 @@ hide:
 
     [:octicons-arrow-right-24: Service](Service.md)
 
--   :material-package-variant-closed:{ .lg .middle } __资源与对象__
+-   :material-cube-outline:{ .lg .middle } **资源与对象**
 
     ---
 
@@ -45,7 +54,7 @@ hide:
 
     [:octicons-arrow-right-24: Resources](Resources.md)
 
--   :material-window-restore:{ .lg .middle } __UI 与表现__
+-   :material-window-restore:{ .lg .middle } **UI 与表现**
 
     ---
 
@@ -70,18 +79,49 @@ hide:
 | **UI Extension** UI 扩展 | 开箱即用组件 | 封装 Button / Switch / Image · 拖拽导航 |
 | **Navigation** 导航热键 | 多设备输入 | New Input System · 拓扑感知 · 顶层焦点栈 |
 
-## 文档怎么读
+## 三步上手
 
-每篇模块文档都按同一套结构组织，可以按需要跳读：
+<div class="steps" markdown>
 
-- **使用前提** —— 需要哪些组件、要不要先初始化
-- **用法** —— 从获取服务到完整示例，按调用顺序排列
-- **API 速查** —— 一屏看完常用方法签名
-- **注意事项** —— 边界条件、性能陷阱、已废弃接口
+1. **跑通启动链路**：打开 [QuickStart](QuickStart.md)，从 RootModule、场景根节点到最小启动流程走一遍，先让第一个界面亮起来。
 
-建议的阅读顺序：先读 [QuickStart 快速入门](QuickStart.md) 跑通启动流程，再按项目需要挑模块——做战斗看 **Timer / Event / GameObjectPool**，做界面看 **UI / RecyclerView**，做资源与热更看 **Resources / HybridCLR**。
+2. **按需求挑模块**：每篇文档都是「使用前提 → 用法 → API 速查 → 注意事项」四段式，先确认前提组件挂上了，再抄示例。
+
+3. **接入自己的流程**：注册自定义服务、打开业务 UI、申请资源租约；需要热更时再按 HybridCLR 的流程接。
+
+</div>
+
+## 相关链接
+
+<div class="grid cards links" markdown>
+
+-   :octicons-repo-16: **框架源码**
+
+    ---
+
+    `AlicizaX/AlicizaXTemplate` —— 源码、Issues、Release 都在这里。
+
+    [:octicons-arrow-right-24: 前往仓库](https://github.com/AlicizaX/AlicizaXTemplate)
+
+-   :octicons-book-16: **文档仓库**
+
+    ---
+
+    本站的 Markdown 源文件，右上角「编辑此页」会跳到这里。
+
+    [:octicons-arrow-right-24: 查看源码](https://github.com/b4lie/AlicizaXWiki)
+
+-   :octicons-issue-opened-16: **问题反馈**
+
+    ---
+
+    文档写错了、示例跑不通、API 用法有疑问，都欢迎提 issue。
+
+    [:octicons-arrow-right-24: 提个 issue](https://github.com/AlicizaX/AlicizaXTemplate/issues)
+
+</div>
 
 !!! note "关于本文档"
 
-    本站在内容上与框架仓库 `AlicizaXTemplate/Books/` 保持 1:1 一致，仅将两处已失效的链接降级为纯文本。
-    发现文档问题请到 [文档仓库](https://github.com/b4lie/AlicizaXWiki/issues) 提 issue，框架本身的问题请提到 [AlicizaXTemplate](https://github.com/AlicizaX/AlicizaXTemplate/issues)。
+    模块文档与框架仓库 `AlicizaXTemplate/Books/` 同源，仅将两处已失效的链接降级为纯文本。
+    站点使用 MkDocs + Material for MkDocs 构建，支持中英文混合检索。
