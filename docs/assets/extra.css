@@ -1,0 +1,72 @@
+/* AlicizaX 文档站样式微调
+   theme.font 已关闭，这里补回系统字体栈，避免加载 Google Fonts。 */
+:root {
+  --md-text-font: "Segoe UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB",
+    "Noto Sans SC", -apple-system, BlinkMacSystemFont, sans-serif;
+  --md-code-font: "Cascadia Mono", "JetBrains Mono", Consolas, "Courier New",
+    monospace;
+}
+
+/* 中文正文行距略放宽，长段落更好读 */
+.md-typeset {
+  line-height: 1.72;
+}
+
+/* 表格在小屏下允许横向滚动，避免挤压 */
+.md-typeset table:not([class]) {
+  display: table;
+  font-size: 0.74rem;
+}
+
+/* 首页能力表格居中显示 */
+.md-typeset table.center-table {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* 首页 hero 区 */
+.md-typeset .hero {
+  text-align: center;
+  margin: 1rem 0 2.4rem;
+}
+
+.md-typeset .hero img {
+  margin: 0 auto 0.8rem;
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+}
+
+.md-typeset .hero h1 {
+  margin: 0.3rem 0 0.5rem;
+  border-bottom: none;
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* 首页四张卡片固定两列，避免 3+1 的孤行
+   注意：Material 9.8 里 .grid.cards > ul 是 display:contents，栅格定义在容器上 */
+.md-typeset .grid.cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media screen and (max-width: 44.9375em) {
+  .md-typeset .grid.cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 桌面端隐藏侧边栏顶部的站点名（顶部导航栏已经有），移动端抽屉里保留 */
+@media screen and (min-width: 76.25em) {
+  .md-nav--primary > .md-nav__title {
+    display: none;
+  }
+}
+
+.md-typeset .hero p {
+  color: var(--md-default-fg-color--light);
+}
+
+.md-typeset .hero .md-button {
+  margin: 0.35rem 0.25rem 0;
+}
