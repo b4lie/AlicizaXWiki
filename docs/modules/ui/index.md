@@ -113,6 +113,28 @@ public class ui_LoginWindow : UIHolderObjectBase { ... }
 - `RegisterAll` 默认由 `RuntimeInitializeOnLoadMethod` 调用。特殊小游戏平台不会调用它时，未注册类型走反射兜底（首次打开打 `UI not pre-registered` Warning）；需要关注性能时，在所属程序集入口手动调用 `AlicizaX.UI.Runtime.UIGeneratedRegistry.RegisterAll()`。
 - 生成器诊断：`UI004`（缺少可访问的无参构造函数）、`UI005`（`[Window]` 使用 `UILayer.All`）是编译错误；`UI003`（生成代码无法访问的类型）是 Warning，该类型走反射。
 
+### UISetting 与生成流程
+
+生成器的配置入口是编辑器窗口 `AlicizaX / UISetting Window`，三个页签分别管命名、输出和元素映射。
+
+![UISetting - General](../../assets/ui/ui-setting-general.png)
+
+*General：命名前缀、`Identifier Formatter`、`Resource Path Resolver`、`Script Code Emitter / Writer`、`Exclude Keywords`，下方实时预览生成的脚本与组件。*
+
+![UISetting - Script Generation](../../assets/ui/ui-setting-script-generation.png)
+
+*Script Generation：按工程分别配置 `Namespace`、Holder 代码输出目录、Prefab 根目录和加载类型（`Resources` / `Asset Bundle`）。*
+
+![UISetting - Element Mapping](../../assets/ui/ui-setting-element-mapping.png)
+
+*Element Mapping：节点名前缀到组件类型的映射，例如 `Btn` → `UXButton`、`Img` → `Image`、`ScrollView` → `RecyclerView`、`Drag` → `UXDraggable`。*
+
+在 Hierarchy 里选中节点右键即可生成：
+
+![UI 生成菜单](../../assets/ui/ui-generate-context-menu.png){ width="240" }
+
+*右键菜单里的 `UI生成 / 绑定` 与 `UI生成 / 仅复制属性` 两个入口。*
+
 ## 生命周期
 
 初始化生命周期内联在 `UIBase` 中，通过虚方法重写：
@@ -458,6 +480,12 @@ GameApp.UI.ForceExitBlock();
 Holder 所在 GameObject 被外部销毁时，所属视图立即按 `DestroyNow` 释放。例外：从未激活过的 Holder 不会收到 `OnDestroy`，视图收不到通知，之后访问会抛 `MissingReferenceException`。Prefab 根节点应保持激活。
 
 隐藏只切显示状态：窗口切 layer 和 `Canvas.enabled`，Widget 切 `CanvasGroup`。隐藏和缓存期间，节点上的 MonoBehaviour 继续运行，也不会触发 `OnEnable`、`OnDisable`，进出缓存也不触发 `OnTransformParentChanged`。带 `Update`、粒子或 Animator 的组件，要在 `OnClose` 和 `OnOpen` 里自行停止和恢复。
+
+### 用 Profiler 看批次
+
+![Profiler 中的 UI 合批](../../assets/ui/uximage-profile.png)
+
+*Profiler 的 UI 详情面板：Batch 1 的打断原因是 `Different Material Instance`，212 个 GameObject 被拆成两批。同层 UI 混用多套材质或图集时会额外增加批次，合并图集、复用材质能直接减少 draw call。*
 
 ## 并发模型
 
