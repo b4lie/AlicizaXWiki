@@ -131,6 +131,23 @@ nav:
       - UI 界面: modules/ui/index.md
       - Audio 音频: modules/audio/index.md
       - Localization 本地化: modules/localization/index.md
+  - 扩展组件:
+      - 概览: extension/index.md
+      - 基础控件:
+          - UXComponent: extension/uxcomponent.md
+          - UXButton: extension/uxbutton.md
+          - UXToggle: extension/uxtoggle.md
+          - UXImage: extension/uximage.md
+          - UXInput: extension/uxinput.md
+          - UXDraggable: extension/uxdraggable.md
+          - UX UI 音效: extension/uxui-audio.md
+      - 输入与导航:
+          - Navigation: extension/navigation.md
+          - HotkeyComponent: extension/hotkey-component.md
+          - InputGlyph: extension/input-glyph.md
+      - 虚拟列表:
+          - RecyclerView: extension/recyclerview.md
+          - RecyclerView 导航: extension/recyclerview-navigation.md
 
 # --- 双语站点骨架（首版未启用，保持纯中文）---------------------------
 # 启用步骤：
