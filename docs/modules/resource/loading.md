@@ -1,4 +1,4 @@
-# 加载资源（租约）
+# 加载与绑定
 
 新代码一律用 `LoadLease` / `LoadLeaseAsync`。租约是一次明确的所有权；`Dispose()` 只交还所有权，不会立刻把资源从内存里抠掉，引用归零后走 Idle TTL。
 

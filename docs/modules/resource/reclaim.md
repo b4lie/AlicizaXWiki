@@ -1,4 +1,4 @@
-# 资源回收
+# 回收与调试
 
 ```csharp
 IResourceService resources = GameApp.Resource;

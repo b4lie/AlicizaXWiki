@@ -1,4 +1,4 @@
-# Widget
+# Widget 与 Tab
 
 ```csharp
 protected T CreateWidgetSync<T>(Transform parent, bool visible = true) where T : UIWidget;

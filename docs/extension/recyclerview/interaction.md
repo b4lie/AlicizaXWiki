@@ -1,4 +1,4 @@
-# 数据更新
+# 数据更新与交互
 
 `UGList` / `UGMixedList` / `UGLoopList` / `UGGroupList` 已直接暴露增删改接口，业务层优先走这些方法，不要再绕到 `Adapter`。
 

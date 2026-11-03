@@ -1,4 +1,4 @@
-# UIRouter（页面导航）
+# 路由与转场
 
 入口：`IUINavigationService router = GameApp.UI;`（`IUIService` 也直接暴露这些方法）。
 

@@ -1,4 +1,4 @@
-# 分配预算
+# 性能预算
 
 以下数据只来自 Unity 2022.3.62f3 编辑器（EditMode 和 PlayMode，测试 `UIAllocationCases`、`UIPerformanceTests`、`UIHotPathTests`），不代表 IL2CPP、HybridCLR 和小游戏平台。
 

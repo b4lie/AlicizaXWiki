@@ -1,4 +1,4 @@
-# 初始化资源包
+# 资源包与下载
 
 `ResourceComponent.Awake()` 只创建并注册默认包对象，真正初始化要调用 `InitPackageAsync()`：
 

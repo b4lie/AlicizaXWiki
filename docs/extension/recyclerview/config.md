@@ -1,4 +1,4 @@
-# Inspector 配置
+# 配置与 API
 
 `RecyclerView` 的主要配置项：
 
