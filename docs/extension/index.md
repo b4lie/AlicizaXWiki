@@ -20,8 +20,8 @@
 | [UXImage](uximage.md) | 渐变绘制、镜像模式、进度条 |
 | [UXDraggable](uxdraggable.md) | 拖拽事件转发、可拖拽弹窗 |
 | [HotkeyComponent](hotkey-component.md) | 可选 input 包：Input System 快捷键绑定、优先级规则 |
-| [RecyclerView](recyclerview.md) | 虚拟列表、`ViewHolder`、定高/变高、普通列表、循环列表、混合模板列表和分组列表 |
-| [RecyclerView.Navigation](recyclerview-navigation.md) | 可选 input 包：RecyclerView 手柄/键盘导航、虚拟焦点、ViewHolder 导航接口和 UXNavigation 接入 |
+| [RecyclerView](recyclerview/index.md) | 虚拟列表总览、`ViewHolder`、数据源与适配器 |
+| [RecyclerView.Navigation](recyclerview/navigation.md) | 可选 input 包：RecyclerView 手柄/键盘导航、虚拟焦点、ViewHolder 导航接口和 UXNavigation 接入 |
 | [InputGlyph](input-glyph.md) | 可选 input 包：Input System 按键图标、TMP Sprite 标签和图标数据库 |
 | [UXInput](uxinput.md) | 可选 input 包：设备监听、输入读取、运行时重绑定、震动和输入诊断 |
 | [Navigation](navigation.md) | 可选 input 包：多输入设备 UI 焦点管理、`UXNavigationScope`、顶层 Scope 选择、导航压制、`UXFocusChange` |

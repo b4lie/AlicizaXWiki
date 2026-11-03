@@ -117,18 +117,29 @@ nav:
       - 首页: index.md
       - 概览: overview.md
       - 快速入门: quickstart.md
+      - 安装与扩展包: install.md
   - 核心服务:
       - Service 基础服务: modules/service/index.md
       - Timer 计时器: modules/timer/index.md
       - Event 事件: modules/event/index.md
       - Procedure 流程: modules/procedure/index.md
   - 资源与对象:
-      - Resources 资源: modules/resource/index.md
+      - Resources 资源:
+          - 概览: modules/resource/index.md
+          - 加载与绑定: modules/resource/loading.md
+          - 资源包与下载: modules/resource/packages.md
+          - 回收与调试: modules/resource/reclaim.md
       - Scene 场景: modules/scene/index.md
       - GameObjectPool 实例池: modules/gameobjectpool/index.md
       - MemoryPool 内存池: modules/memorypool/index.md
   - UI 与表现:
-      - UI 界面: modules/ui/index.md
+      - UI 界面:
+          - 概览: modules/ui/index.md
+          - 元数据与生命周期: modules/ui/lifecycle.md
+          - 打开与关闭: modules/ui/window.md
+          - 路由与转场: modules/ui/router.md
+          - Widget 与 Tab: modules/ui/widget.md
+          - 性能预算: modules/ui/performance.md
       - Audio 音频: modules/audio/index.md
       - Localization 本地化: modules/localization/index.md
   - 扩展组件:
@@ -146,8 +157,14 @@ nav:
           - HotkeyComponent: extension/hotkey-component.md
           - InputGlyph: extension/input-glyph.md
       - 虚拟列表:
-          - RecyclerView: extension/recyclerview.md
-          - RecyclerView 导航: extension/recyclerview-navigation.md
+          - 概览: extension/recyclerview/index.md
+          - 普通列表: extension/recyclerview/list.md
+          - 混合模板: extension/recyclerview/mixed.md
+          - 循环列表: extension/recyclerview/loop.md
+          - 分组列表: extension/recyclerview/group.md
+          - 数据更新与交互: extension/recyclerview/interaction.md
+          - 配置与 API: extension/recyclerview/config.md
+          - 导航: extension/recyclerview/navigation.md
 
 # --- 双语站点骨架（首版未启用，保持纯中文）---------------------------
 # 启用步骤：
