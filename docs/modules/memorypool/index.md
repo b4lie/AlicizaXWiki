@@ -66,7 +66,7 @@ MemoryPool.Release(info);
 ```csharp
 public sealed class CachedTextWrapper : MemoryObject, IPoolEvictable
 {
-    public ResourceAssetLease<TextAsset> Lease;
+    public AssetLease<TextAsset> Lease;
 
     public override void Clear()
     {

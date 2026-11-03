@@ -16,7 +16,7 @@ GameObjectPool 只池化 Unity `GameObject` 实例。资源系统管 Prefab 引�
 - `ResourceComponent`
 - `GameObjectPoolComponent`
 
-`GameObjectPoolComponent` 在 `Awake` 注册 `IGameObjectPoolService`。Prefab 源资产走内部 `IPrefabLoader`：`LoadLease<GameObject>` 持有租约，`UnloadPrefab` 成对 `Dispose`。**不会**走 `LoadGameObject`（那个 API 会实例化并绑 `ResourceOwner`，和池生命周期冲突）。
+`GameObjectPoolComponent` 在 `Awake` 注册 `IGameObjectPoolService`。Prefab 源资产走内部 `IPrefabLoader`：`LoadLease<GameObject>` 持有租约，`UnloadPrefab` 成对 `Dispose`。**不会**走 `Instantiate`（那个 API 会给实例挂 `ResourceOwner`，和池生命周期冲突）。
 
 ```csharp
 using AlicizaX;
@@ -341,7 +341,7 @@ Hierarchy 本身也能看：`[FX]`、`[HUD]` 下挂休眠体。
 - 回收时全树 `GetComponentsInChildren`
 - 通用 Reset 基类、组件白名单
 
-一次性物体继续用 `GameApp.Resource.LoadGameObject`。池和一次性物不互相兜底。
+一次性物体继续用 `GameApp.Resource.Instantiate`。池和一次性物不互相兜底。
 
 ## 旧 API
 

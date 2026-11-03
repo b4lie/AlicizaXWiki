@@ -55,11 +55,11 @@ public enum UILayer
 - `Popup`：弹窗层。
 - `Tips`：提示、Toast、跑马灯。
 - `Top`：最高层，例如新手引导遮罩。
-- `UILayer.All` 不是可显示层，只用于缓存节点与数组长度。
+- `UILayer.All` 不是可显示层，只用于数组长度。
 
 `UIMetaRegistry.Register` 在注册期校验层级，传入 `UILayer.All` 会抛 `ArgumentOutOfRangeException`。
 
-每个层最多 **200** 个窗口（`LAYER_DEEP / WINDOW_DEEP`）；超出会在编辑器中断言，避免 Canvas `sortingOrder` 与下一层重叠。
+每个层最多 **200** 个窗口（`LAYER_DEEP / WINDOW_DEEP`）；超出会在编辑器中断言，避免 Canvas `sortingOrder` 与下一层重叠。置顶只给目标窗口分配新序号，关闭中间窗口不改变其他窗口的 `sortingOrder`；序号用尽时整层重编号一次，因此层内窗口接近 200 个时置顶会退化为 O(层内窗口数)。
 
 ## 元数据
 
@@ -94,9 +94,10 @@ public sealed class BattleHudWindow : UIWindow<ui_BattleHudWindow>
 }
 ```
 
-- 只有带 `[UIUpdate]` 的窗口/Widget 才会收到 `OnUpdate`；窗口必须处于 `Opened` 且 `Effective` 才会被 tick。
-- Widget 的更新由父窗口的遍历驱动，因此 Widget 自己也需要 `[UIUpdate]`。
-- `deltaTime` 来自 `AppServiceRoot.Update`（`Time.deltaTime`）；窗口/Widget 的更新不会跨层并行调度，顺序由打开深度决定。
+- 只有带 `[UIUpdate]` 的窗口/Widget 才会收到 `OnUpdate`，每帧成本只与这些视图的数量有关。视图必须 `Effective`，自身和所在窗口都必须处于 `Opened`。
+- 父节点先于子节点更新；同级 Widget 按进入更新链表的顺序更新，不是创建顺序。不要依赖同级之间的顺序。
+- 本帧新进入更新或转场链表的视图从下一帧开始执行；本帧移除的视图不再执行。
+- `deltaTime` 来自 `AppServiceRoot.Update`（`Time.deltaTime`）。
 
 Holder 的资源位置使用 `[UIRes]`（写在 Holder 类上，不写在窗口逻辑类上）：
 
@@ -107,8 +108,10 @@ public class ui_LoginWindow : UIHolderObjectBase { ... }
 
 注册入口：
 
-- 启动期集中注册：`UIMetaRegistry.Register(uiType, holderType, layer, cacheTime, needUpdate)` 与 `UIResRegistry.Register(holderType, location, loadType)`。
-- 生成器（`Plugins/SourceGenerators/UI`）会为标注的 UI 生成注册代码；反射兜底只应在缺少生成代码时出现（首次打开会打 `UI not pre-registered` Warning）。
+- 启动期集中注册：`UIMetaRegistry.Register(uiType, holderType, layer, cacheTime, needUpdate, create)` 与 `UIResRegistry.Register(holderType, location, loadType)`。`create` 可省略，省略时用反射创建实例。
+- 生成器（`Plugins/SourceGenerators/UI`）在每个程序集生成 `UIGeneratedRegistry.RegisterAll()`，包含 Holder 资源、窗口元数据和实例工厂。生成器修改后要运行 `Build.ps1` 更新 DLL。
+- `RegisterAll` 默认由 `RuntimeInitializeOnLoadMethod` 调用。特殊小游戏平台不会调用它时，未注册类型走反射兜底（首次打开打 `UI not pre-registered` Warning）；需要关注性能时，在所属程序集入口手动调用 `AlicizaX.UI.Runtime.UIGeneratedRegistry.RegisterAll()`。
+- 生成器诊断：`UI004`（缺少可访问的无参构造函数）、`UI005`（`[Window]` 使用 `UILayer.All`）是编译错误；`UI003`（生成代码无法访问的类型）是 Warning，该类型走反射。
 
 ## 生命周期
 
@@ -127,7 +130,7 @@ protected virtual void OnRegisterEvent(EventListenerProxy proxy);
 语义：
 
 - `OnInitialize`：资源绑定后、首次打开前执行一次；缓存复用不会再次执行。
-- `OnOpen`：逻辑打开，此时 `IsOpen == true`；开场动画尚未开始。
+- `OnOpen`：逻辑打开。钩子执行期间 `IsOpen == false`，返回后才变为 true；开场动画尚未开始。
 - `OnRefresh`：已 `Opened` 后再次 `Show` 传参时调用，调用前参数已更新。
 - `OnClose`：逻辑关闭（`IsOpen` 已为 false），关场动画尚未完成。
 - `OnDestroy`：实例销毁前调用一次。
@@ -147,7 +150,7 @@ protected virtual void OnRegisterEvent(EventListenerProxy proxy);
 补充规则：
 
 - **同类型**已在 `Opening` / `Opened` / 进行中：只刷新 userData（latest wins），不重新走完整打开；`Opening` 期间不会反复 `OnRefresh`，开动画结束后合并刷新一次。
-- **同类型**正在 `Closing`：异步 `Show` 会等关闭完成后再用 latest 打开；`ShowUISync` 无法 await，返回 `null` 并打 Warning。
+- **同类型**正在 `Closing`：`ShowUI` 和 `ShowUISync` 都返回 `null` 并打 Warning。导航 API 会等待关闭完成后再打开目标页。
 - **同层不同类型**可并行打开/关闭；没有整层 FIFO 命令队列。
 - 页面导航用 `NavigateTo/Back`；叠加弹窗/独立面板用 `ShowUI/CloseUI`。同一逻辑页不要混用两条路径。
 - 缓存复用不会重新触发 `OnInitialize`，只重新 `OnOpen` 并按需 `OnRefresh`；`CacheTime == 0` 或 `force` 关闭直接销毁。
@@ -258,7 +261,7 @@ await GameApp.UI.BackTo<UIHomeWindow>(openIfMissing: false);
 await GameApp.UI.CloseCurrent(force: false);           // 关闭当前页
 ```
 
-`CloseCurrent` 规则：history 大于 1 时等价于 `Back`；只有 root 时关闭 root 并移除 history。
+`CloseCurrent` 规则：关闭当前页并清空 history。需要回到上一页时使用 `Back`。
 
 ### 状态
 
@@ -300,8 +303,9 @@ public interface ITickTransitionSource : IUITransitionSource
 }
 ```
 
-- Holder 在 `UIService` 可用的运行时优先走 tick 路径：`Play` 不再每帧 `UniTask.Yield`，而是由 `UIService.Tick` 调用 `Advance`；完成时 Holder 自动注销。
-- 没有 UI 服务的手动 Holder（`UIHolderFactory` 创建）仍走异步 `Play` 路径。
+- 转场源实现 `ITickTransitionSource` 时走 tick 路径：由 `UIService.Tick` 调用 `Advance`，完成后 Holder 直接通知所属视图，不分配等待对象。
+- 只实现 `IUITransitionSource` 时走异步 `Play` 路径，每次播放分配一个 CTS 和一个 UniTask runner。
+- 手动创建的 Holder（`UIHolderFactory`）没有所属视图，不会播放转场。
 - `UIPresetTransition` 同时实现两种接口；tick 路径使用 `useUnscaledTime` 选择时间源（默认 unscaled）。
 - `timeScale = 0` 且 `useUnscaledTime = false` 时，按缩放时间的转场会随游戏暂停而冻结（不会死循环）；这是明确的时间语义。
 - 取消时只取消，不补终态；终态由下一次完整 `Play` 或 `Snap` 负责。被取消的异步 `Play` 抛出的 `OperationCanceledException` 由 Holder 吞掉。
@@ -318,7 +322,7 @@ private UniTask PlayMine(bool open, CancellationToken ct) { ... }
 private void SnapMine(bool open) { ... }
 ```
 
-`SetTransition(null)` 取消当前播放并回到 Inspector 上的组件源。
+`SetTransition(null)` 取消当前播放并回到 Inspector 上的组件源。播放中替换转场源时，当前打开或关闭阶段立即结束，不会重新播放。
 
 ## Widget
 
@@ -369,7 +373,8 @@ protected override void OnRegisterEvent(EventListenerProxy proxy)
 private void OnLanguageChanged(in LocalizationChangeEvent evt) => RefreshText();
 ```
 
-- 窗口/Widget 重新 `Effective` 时注册，不可见/关闭/销毁时自动清理；销毁时归还 `MemoryPool`。
+- `OnRegisterEvent` 在每个视图的生命周期内只调用一次，发生在首次 `Effective` 时。之后不可见或关闭只暂停订阅，重新 `Effective` 时恢复，不再调用它。依赖每次打开的逻辑写在 `OnOpen` 或 `OnRefresh`。
+- 销毁时释放订阅并把代理归还 `MemoryPool`。
 - 在 `OnRegisterEvent` 内销毁自身是允许的：事件代理会延迟到回调返回后释放，不会泄漏句柄。
 
 ## Holder 生命周期事件
@@ -382,7 +387,7 @@ OnWindowBeforeClosedEvent / OnWindowAfterClosedEvent / OnWindowDestroyEvent
 ```
 
 - 顺序与调用点固定；单个订阅者抛异常只记录日志，不影响其余订阅者。
-- 订阅变更时重建调用快照，invoke 路径零托管分配（`GetInvocationList` 只在订阅变化后的首次调用发生）。
+- 增删订阅时复制回调数组，invoke 路径 0 B。回调内增删订阅从下一次触发开始生效。
 - 输入系统等外部模块通过它感知窗口显示/隐藏；不要在回调里做重活。
 
 ## 手动创建 Holder
@@ -409,30 +414,57 @@ GameApp.UI.ForceExitBlock();
 
 ## 分配预算
 
-以下为当前实现的实测/约定值（EditMode `UIPerformanceTests` / `UIHotPathTests`）：
+以下数据只来自 Unity 2022.3.62f3 编辑器（EditMode 和 PlayMode，测试 `UIAllocationCases`、`UIPerformanceTests`、`UIHotPathTests`），不代表 IL2CPP、HybridCLR 和小游戏平台。
 
-| 路径 | 分配 | 说明 |
+常规热路径：
+
+| 路径 | 实测 | 用例 |
 | --- | --- | --- |
-| 稳态 `Tick`（窗口更新 + 子节点遍历） | **0 B** | 首次 tick 每个有子节点的 UI 分配 1 个子节点缓冲（实测 40 B），之后复用 |
-| 转场 Tick 推进（`ITickTransitionSource`） | **0 B** | 只有开始转场时分配 1 个 `UniTaskCompletionSource` |
-| 缓存窗口关闭（无转场） | **0 B** | `record.Settled` 已删除，`AwaitClosed` 同步完成时也不分配 |
-| 缓存窗口重新打开 | **0 B** | 无资源加载、无新对象 |
-| 有转场的关闭（tick 源） | 实测 176 B（2 个 `UniTaskCompletionSource`） | Holder 完成点 + `AwaitTransition` 等待点 |
-| 异步首次打开 | 1 组 | `UIWindowLoad` + CTS + 每个并发请求 1 个 `UIOpenRequest` + UCS（+ 取消 token 时 1 个注册闭包）；请求结束即释放，不池化 |
-| `ShowUI<T>(arg)` 带一个值类型参数 | 1 数组 + 1 装箱 | 用户点击级频率，允许；不要在每帧循环里调用 `ShowUI` |
-| 导航（`NavigateTo` 等） | 1 个 `NavigationCommand` + 1 UCS + 1 `UIRouteEntry` + 1 份参数数组 | CTS 只在命令开始执行时创建；`CurrentEntry` 不再拷贝 |
-| Holder 生命周期事件 invoke | **0 B** | 订阅变化时重建快照 |
-| Widget 异步创建 | 1 个 CTS（Widget 持有，创建结束释放） | 父级批量取消不再有每 Widget 字典/闭包 |
-| 每个类型首次打开（缺少生成注册时） | 反射注册一次性开销 | 打 `UI not pre-registered` Warning；应通过生成器消除 |
+| 稳态 `Tick`（1、16、512 个更新视图） | **0 B** | `tick-steady-*` |
+| 活动 tick 转场（1、16、64 个） | **0 B** | `tick-transitions-*` |
+| 缓存窗口关闭、重开，首次和稳态 | **0 B** | `cached-*-first`、`cached-cycle-*` |
+| 带缓存时长的窗口开关，稳态 | **0 B**（首次关闭见下表） | `timed-cache-cycle` |
+| tick 转场开关，首次和稳态 | **0 B** | `transition-cycle-*` |
+| 同步完成的 `ShowUI<T>`（已打开、已缓存），新 `T` 首次调用和稳态 | **0 B**（进程内首次见下表） | `async-show-*` |
+| 关闭时有 1–2 个等待者 | **0 B** | `close-two-waiters` |
+| Widget 无参 `Open`、`Close`，有无 tick 转场 | **0 B** | `widget-toggle-*` |
+| 已加载 Tab 切换 | **0 B** | `tab-switch-loaded` |
+| 方法组注册后的事件暂停和恢复 | **0 B** | `event-resume-method-group` |
+| 复用代理容量、业务缓存委托时的 `AddUIEvent` | **0 B** | `event-add-cached-delegate` |
+| Holder 事件触发、只读查询 | **0 B** | `holder-event-invoke`、`query-paths` |
+| 全部 `UITransitionPreset` 的 `Advance` | **0 B** | `preset-advance-*` |
+
+低频路径：
+
+| 路径 | 实测或对象 | 触发条件 | 释放责任 |
+| --- | --- | --- | --- |
+| 进程内首次 `ShowUI` | 最多 244 B，4 次分配；PlayMode 实测 0 B，随首次调用的时机变化 | 进程内一次，UniTask 和泛型静态初始化 | 进程持有 |
+| 创建 Widget（不含 Prefab 实例化成本的差异） | 约 1.5 KB，12–13 次分配，含测试夹具创建 GameObject | 每实例一次 | 随视图回收 |
+| 首次异步加载 | 约 1.0–4.8 KB，16–54 次分配；高值出现在它先于其他异步路径运行时 | 每次实际加载 | 加载结束释放；runner 由 UniTask 池持有 |
+| 带缓存时长的窗口首次关闭 | 646 B，8 次分配，来源未逐个确认；`AddTimer` 路径没有实例级 `new` | 实测首次；之后 0 B | 未确认 |
+| 视图首次有等待者 | 64 B，1 次分配（2 项等待数组） | 每个视图首次 `await` 转场 | 随视图回收 |
+| 事件代理首次注册 | 160 B 的订阅数组（4 项，不够时翻倍）；每种事件类型另有一个静态委托；业务写方法组时再加委托 | 代理首次注册；每种事件类型一次 | 数组随代理留在对象池；静态委托进程持有 |
+| 带一个值类型参数打开 | 60 B，2 次分配（数组和装箱） | 用户操作级别 | 关闭或替换时释放 |
+| 导航 | `NavigationCommand`、UCS、CTS、`UIRouteEntry`，有参数时再加数组 | 每次导航 | 命令结束释放，条目随 history |
+| 异步转场源 | CTS 和 UniTask runner | 非 tick 转场每次播放 | 播放结束释放 |
+| 未完成任务上调用 `Forget()` | UniTask 池化的 `StateTuple` | 业务调用 `CloseSelf().Forget()` 且有转场 | UniTask 池 |
+| Tab 排队切换 | `TabRequest`、UCS | 目标未加载，或上一 Tab 还在关闭 | 请求结束释放 |
+| 钩子内重入打开 | 一个 `UniTaskCompletionSource<bool>` | 在钩子内调用 `ShowUI` | 逻辑打开完成释放 |
+| 同一转场超过 2 个等待者 | 一次数组扩容 | 第 3 个等待者 | 随视图回收 |
+| 反射注册兜底 | 特性读取、注册表项和创建委托，打 Warning | 未注册类型首次使用 | 注册表持有到进程结束 |
 
 每帧或每次高频调用不应出现新的托管分配；任何无法消除的分配都必须在上表中登记触发条件、数量、频率与释放责任。
+
+Holder 所在 GameObject 被外部销毁时，所属视图立即按 `DestroyNow` 释放。例外：从未激活过的 Holder 不会收到 `OnDestroy`，视图收不到通知，之后访问会抛 `MissingReferenceException`。Prefab 根节点应保持激活。
+
+隐藏只切显示状态：窗口切 layer 和 `Canvas.enabled`，Widget 切 `CanvasGroup`。隐藏和缓存期间，节点上的 MonoBehaviour 继续运行，也不会触发 `OnEnable`、`OnDisable`，进出缓存也不触发 `OnTransformParentChanged`。带 `Update`、粒子或 Animator 的组件，要在 `OnClose` 和 `OnOpen` 里自行停止和恢复。
 
 ## 并发模型
 
 互斥粒度是**单个 UI 类型（per-type）**，不是整层队列：
 
 - 同层不同类型：`Show` / `Close` 可并行。
-- 同类型：已打开/打开中再次 `Show` 只刷 latest userData；关闭中异步 `Show` 等关闭完成；关闭中 `ShowUISync` 返回 `null` + Warning；打开中 `Close` 取消加载并走关闭路径。
+- 同类型：已打开/打开中再次 `Show` 只刷 latest userData；关闭中 `Show` 返回 `null` + Warning；打开中 `Close` 取消加载并走关闭路径。
 - 导航是单队列事务：同一时刻只有一个命令执行，最多排一个 pending；新命令取消未提交的旧命令。
 
 ## 日志与告警语义
