@@ -245,7 +245,7 @@
 .md-nav--primary .md-nav__link {
   padding: 0.5rem 0;
   color: var(--md-default-fg-color--light);
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   line-height: 1.5;
   transition: color 0.15s ease;
 }
@@ -254,37 +254,38 @@
   color: var(--md-default-fg-color);
 }
 
-/* 一级分组：上方分隔线 + 加粗标题 */
-.md-nav--primary > .md-nav__list > .md-nav__item--section > .md-nav__link {
-  margin-top: 1.15rem;
-  padding-top: 1.15rem;
+/* 一级分组：可折叠标题，上方分隔线 + 加粗 */
+.md-nav--primary > .md-nav__list > .md-nav__item--nested > .md-nav__link {
+  margin-top: 0.7rem;
+  padding-top: 0.85rem;
   border-top: 1px solid var(--md-default-fg-color--lightest);
   color: var(--md-default-fg-color);
-  font-size: 0.8rem;
+  font-size: 0.86rem;
   font-weight: 700;
   letter-spacing: 0.01em;
 }
 
-.md-nav--primary > .md-nav__list > .md-nav__item--section:first-child > .md-nav__link {
+.md-nav--primary > .md-nav__list > .md-nav__item--nested:first-child > .md-nav__link {
   margin-top: 0;
   padding-top: 0;
   border-top: none;
 }
 
-/* 分组内条目缩进 */
-.md-nav--primary > .md-nav__list > .md-nav__item--section > .md-nav > .md-nav__list {
-  padding-left: 0.9rem;
+/* 展开后的分组条目缩进 */
+.md-nav--primary > .md-nav__list > .md-nav__item--nested > .md-nav > .md-nav__list {
+  padding-left: 0.95rem;
 }
 
 /* 二级分组（基础控件 / 输入与导航 / 虚拟列表） */
 .md-nav--primary .md-nav[data-md-level="1"] > .md-nav__list > .md-nav__item--nested > .md-nav__link {
-  margin-top: 0.55rem;
+  margin-top: 0.5rem;
   color: var(--md-default-fg-color);
+  font-size: 0.82rem;
   font-weight: 600;
 }
 
 .md-nav--primary .md-nav[data-md-level="1"] > .md-nav__list > .md-nav__item--nested > .md-nav > .md-nav__list {
-  padding-left: 0.9rem;
+  padding-left: 0.95rem;
 }
 
 /* 当前页高亮 */
@@ -294,14 +295,21 @@
   font-weight: 600;
 }
 
-/* 展开箭头弱化 */
+/* 展开箭头：细一点，展开时旋转 90° */
 .md-nav--primary .md-nav__icon {
-  opacity: 0.5;
+  width: 0.7rem;
+  height: 0.7rem;
+  opacity: 0.45;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.md-nav--primary .md-nav__item--nested > .md-nav__link:hover .md-nav__icon {
+  opacity: 0.9;
 }
 
 /* 侧边栏整体留白 */
 .md-sidebar--primary .md-sidebar__inner {
-  padding-top: 0.5rem;
+  padding-top: 0.6rem;
 }
 
 

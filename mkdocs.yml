@@ -39,7 +39,6 @@ theme:
     - navigation.instant
     - navigation.instant.progress
     - navigation.tracking
-    - navigation.sections
     - navigation.top
     - navigation.footer
     - search.suggest
