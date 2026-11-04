@@ -322,3 +322,21 @@
 
 
 
+
+/* 顶层直链（快速开始）与分组标题同权重，但不带折叠箭头 */
+.md-nav--primary > .md-nav__list > .md-nav__item:not(.md-nav__item--nested) > .md-nav__link {
+  color: var(--md-default-fg-color);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* 表格里的长包名不折断，必要时横向滚动 */
+.md-typeset table:not([class]) code {
+  white-space: nowrap;
+  word-break: keep-all;
+  font-size: 0.62rem;
+}
+
+.md-typeset .md-typeset__table {
+  overflow-x: auto;
+}
