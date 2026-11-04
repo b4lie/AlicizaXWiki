@@ -243,10 +243,10 @@
 
 /* 基础行距与字号 */
 .md-nav--primary .md-nav__link {
-  padding: 0.5rem 0;
+  padding: 0.45rem 0;
   color: var(--md-default-fg-color--light);
-  font-size: 0.8rem;
-  line-height: 1.5;
+  font-size: 0.72rem;
+  line-height: 1.45;
   transition: color 0.15s ease;
 }
 
@@ -256,12 +256,12 @@
 
 /* 一级分组：可折叠标题，上方分隔线 + 加粗 */
 .md-nav--primary > .md-nav__list > .md-nav__item--nested > .md-nav__link {
-  margin-top: 0.7rem;
-  padding-top: 0.85rem;
+  margin-top: 1.15rem;
+  padding-top: 1rem;
   border-top: 1px solid var(--md-default-fg-color--lightest);
   color: var(--md-default-fg-color);
-  font-size: 0.86rem;
-  font-weight: 700;
+  font-size: 0.78rem;
+  font-weight: 600;
   letter-spacing: 0.01em;
 }
 
@@ -280,7 +280,7 @@
 .md-nav--primary .md-nav[data-md-level="1"] > .md-nav__list > .md-nav__item--nested > .md-nav__link {
   margin-top: 0.5rem;
   color: var(--md-default-fg-color);
-  font-size: 0.82rem;
+  font-size: 0.74rem;
   font-weight: 600;
 }
 
@@ -316,7 +316,7 @@
 /* 桌面端加宽左侧导航，长中文标题不换行 */
 @media screen and (min-width: 76.25em) {
   .md-sidebar--primary {
-    width: 13.5rem;
+    width: 12.8rem;
   }
 }
 
