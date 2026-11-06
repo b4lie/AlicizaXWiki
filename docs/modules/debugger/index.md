@@ -20,9 +20,11 @@
 | `IDebuggerWindow` | 单个调试窗口。每个侧边栏选项卡对应一个实现，`CreateView()` 返回 UI Toolkit 的 `VisualElement`。 |
 | `AlicizaX.Console` | 命令扫描、解析、补全、历史和执行；UI 作为 `Command` 窗口挂进 Debugger。 |
 
-窗口路径用 `/` 分组。例如 `Profiler/Memory/Texture` 在侧边栏显示为 `Profiler` → `Memory` → `Texture`，同一路径也可以直接传给 `SelectDebuggerWindow`。
+窗口路径用 `/` 分组。例如 `Profiler/Memory/Texture` 在侧边栏显示为 `Profiler` → `Memory` → `Texture`，同一路径也可以直接传给 `SelectDebuggerWindow`。侧边栏每一级按名称排序。
 
-内置窗口都以 `DebuggerComponent` 的嵌套类实现，按文件拆分在 `Runtime/Debugger/Windows` 下。
+窗口树是唯一数据源：`IDebuggerService.DebuggerWindowRoot` 既用于路径查找和选中，也用于生成侧边栏，不存在第二份菜单结构。
+
+内置窗口都以 `DebuggerComponent` 的嵌套类实现，按文件拆分在 `Runtime/Debugger/Windows` 下。其中纯信息页（`Information/System`、`Environment`、`Screen`、`Graphics`、`Other/Scene`、`Other/Quality`）通过 `[DebuggerWindow]` 自动注册；`Console`、`Command`、需要序列化配置的窗口和泛型内存采样页仍显式注册。
 
 ## 功能一览
 

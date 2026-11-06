@@ -294,13 +294,38 @@ public sealed class RegisterPlayerDebugWindow : MonoBehaviour
 }
 ```
 
+### 自动注册（标签）
+
+给窗口类型加 `[DebuggerWindow]`，调试器启动时会扫描并自动注册，不需要再写注册代码：
+
+```csharp
+using AlicizaX.Debugger;
+
+[DebuggerWindow("Gameplay/Player")]
+public sealed class PlayerDebugWindow : IDebuggerWindow
+{
+    // 实现与上面的手动版本相同
+}
+```
+
+扫描规则：
+
+- 本包程序集始终扫描；其它程序集需要填到 `DebuggerComponent` 的 `Auto Register Assemblies`（序列化字段 `m_AutoRegisterAssemblyNames`）。
+- 标签路径为空时回退为 `Auto/<类名>`。
+- 额外程序集里没有标签的窗口同样回退到 `Auto/<类名>`；本包内置窗口必须显式声明路径，避免把内部窗口整体搬进 `Auto/`。
+- 路径重复时保留先注册的一方（手动注册先于扫描执行），扫描侧打印一条 warning 后跳过。
+- 自动注册的窗口必须有无参构造；需要 `Initialize` 参数或依赖 `[SerializeField]` 配置的窗口继续用手动注册。
+- IL2CPP 会裁剪“只被反射引用”的类型，扩展程序集必须加 `link.xml`（`<assembly fullname="Your.Gameplay" preserve="all" />`）或 `[Preserve]`，否则发布包里窗口会消失。本包通过 `Runtime/Debugger/link.xml` 保留自身程序集。
+
+### 手动注册
+
 规则：
 
-- 路径用 `/` 分组，会显示为侧边栏树形菜单。
+- 路径用 `/` 分组，会显示为侧边栏树形菜单；侧边栏每一级按名称排序。
 - `RegisterDebuggerWindow` 会把额外参数传给窗口的 `Initialize`。
 - 路径不能与已有窗口重复，重复注册会抛 `GameFrameworkException`；路径为空或窗口为 `null` 也会抛异常。
 - `CreateView()` 在窗口被选中时调用；`OnUpdate` 只在该窗口处于活动状态且调试器启用时调用。
-- 注销会移除侧边栏节点；如果当前正显示该窗口，内容区会被清空。
+- 注销会移除侧边栏节点；如果该节点下没有其它窗口，空的父分组会一并移除；如果当前正显示该窗口，内容区会被清空。
 
 ## 字体与缩放
 

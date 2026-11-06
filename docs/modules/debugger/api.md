@@ -21,15 +21,23 @@
 | `UnregisterDebuggerWindow(string path)` | 注销调试窗口，返回是否成功 |
 | `GetDebuggerWindow(string path)` | 获取调试窗口 |
 | `SelectDebuggerWindow(string path)` | 选中调试窗口，返回是否成功 |
+| `Auto Register Assemblies`（`m_AutoRegisterAssemblyNames`） | 额外扫描 `[DebuggerWindow]` 的程序集名；本包程序集始终扫描 |
 | `SetStatsOverlayVisible(bool visible)` | 开关 Stats 悬浮窗 |
 | `IsStatsOverlayVisible` | Stats 悬浮窗当前是否可见 |
+
+## DebuggerWindowAttribute
+
+| API | 说明 |
+| --- | --- |
+| `DebuggerWindowAttribute(string path)` | 标记实现 `IDebuggerWindow` 的类型可自动注册，并声明侧栏路径 |
+| `Path` | 侧栏路径；为空时回退为 `Auto/<类名>` |
 
 ## IDebuggerService
 
 | API | 说明 |
 | --- | --- |
 | `ActiveWindow` | 调试器窗口是否激活 |
-| `DebuggerWindowRoot` | 调试窗口根节点（`IDebuggerWindowGroup`） |
+| `DebuggerWindowRoot` | 调试窗口根节点（`IDebuggerWindowGroup`）；路径查找与侧边栏渲染共用这一棵树 |
 | `RegisterDebuggerWindow(path, window, args)` | 注册窗口 |
 | `UnregisterDebuggerWindow(path)` | 注销窗口 |
 | `GetDebuggerWindow(path)` | 获取窗口 |
@@ -115,3 +123,4 @@
 4. `LogNode` 来自 `MemoryPool`，`GetRecentLogs` 返回只读引用，不要手动释放或跨帧保存。
 5. WebGL 不支持后台线程生成命令表、外部命令文件以及宏文件导入导出。
 6. `AlicizaXConsoleRouter.ActiveConsole` 在 `DebuggerComponent` 初始化 `Command` 窗口前为 `null`；只执行命令、不需要 UI 时用 `AlicizaXConsoleProcessor.InvokeCommand`。
+7. `[DebuggerWindow]` 自动注册依赖反射发现类型：扩展程序集在 IL2CPP 下必须用 `link.xml` 或 `[Preserve]` 保底，且窗口需要无参构造；路径冲突时保留先注册的一方并打印 warning。
