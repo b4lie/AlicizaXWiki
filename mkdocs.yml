@@ -162,7 +162,6 @@ nav:
       - 快捷键: extension/hotkey-component.md
       - UI 导航: extension/navigation.md
       - 性能与分配: modules/input/performance.md
-      - 2.x → 3.x 迁移: modules/input/migration.md
   - Debugger 调试器:
       - 介绍: modules/debugger/index.md
       - 使用方式: modules/debugger/usage.md

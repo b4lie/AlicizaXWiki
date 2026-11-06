@@ -100,7 +100,6 @@ UXNavigationSystem -> UXHotkeySystem -> Haptics -> Reader -> Rebind -> Glyph -> 
 | [快捷键](../../extension/hotkey-component.md) | HotkeyComponent、HotkeyPassThrough、焦点与优先级 |
 | [UI 导航](../../extension/navigation.md) | UXNavigationScope、Focus / Block、动态控件注册 |
 | [性能与分配](performance.md) | 0 B 热路径、实测数据、容量增长和低频操作 |
-| [2.x → 3.x 迁移](migration.md) | 模块实例化、Reader / Rebind 重命名和旧入口替换 |
 
 ## 注意事项
 
