@@ -136,7 +136,11 @@ nav:
           - Widget 与 Tab: modules/ui/widget.md
           - 性能预算: modules/ui/performance.md
       - Audio 音频: modules/audio/index.md
-      - Localization 本地化: modules/localization/index.md
+  - Localization 本地化:
+      - 概览: modules/localization/index.md
+      - 配置与词库生成: modules/localization/config.md
+      - 运行时加载: modules/localization/runtime.md
+      - TMP 绑定与预览: modules/localization/tmp.md
   - 扩展组件:
       - 概览: extension/index.md
       - 基础控件:
