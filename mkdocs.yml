@@ -144,13 +144,8 @@ nav:
           - UXButton: extension/uxbutton.md
           - UXToggle: extension/uxtoggle.md
           - UXImage: extension/uximage.md
-          - UXInput: extension/uxinput.md
           - UXDraggable: extension/uxdraggable.md
           - UX UI 音效: extension/uxui-audio.md
-      - 输入与导航:
-          - Navigation: extension/navigation.md
-          - HotkeyComponent: extension/hotkey-component.md
-          - InputGlyph: extension/input-glyph.md
       - 虚拟列表:
           - 概览: extension/recyclerview/index.md
           - 普通列表: extension/recyclerview/list.md
@@ -160,6 +155,14 @@ nav:
           - 数据更新与交互: extension/recyclerview/interaction.md
           - 配置与 API: extension/recyclerview/config.md
           - 导航: extension/recyclerview/navigation.md
+  - Input 输入:
+      - 概览: modules/input/index.md
+      - 设备、读取与重绑定: extension/uxinput.md
+      - 输入图标: extension/input-glyph.md
+      - 快捷键: extension/hotkey-component.md
+      - UI 导航: extension/navigation.md
+      - 性能与分配: modules/input/performance.md
+      - 2.x → 3.x 迁移: modules/input/migration.md
   - Debugger 调试器:
       - 介绍: modules/debugger/index.md
       - 使用方式: modules/debugger/usage.md

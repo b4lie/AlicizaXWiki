@@ -1,6 +1,8 @@
 # UXInput 输入系统
 
-`UXInput` 是 `com.alicizax.unity.input` 的通用输入入口，包含设备监听、动作解析、输入读取、运行时重绑定、手柄震动和输入诊断。图标数据库和图标 UI 组件见 `InputGlyph.md`。
+`UXInput` 是 `com.alicizax.unity.input` 的通用输入入口，包含设备监听、动作解析、输入读取、运行时重绑定、手柄震动和输入诊断。图标数据库和图标 UI 组件见 [InputGlyph](input-glyph.md)。
+
+包级启动、关闭和所有权规则见 [Input 概览](../modules/input/index.md)。
 
 源码位置：
 
@@ -18,20 +20,27 @@
 Add Component > Input > Input Action Provider
 ```
 
-`InputActionProvider` 是当前输入系统的手动启动入口。它会按顺序执行：
+`InputActionProvider` 是当前输入系统的唯一手动启动入口。它在 `Awake` 调用：
 
-1. `UXInput.Watch.Initialize()`
-2. `UXInput.Glyph.SetDatabase(glyphDatabase)`
-3. 建立 `InputActionProvider` 的 action 查询表
-4. `UXInput.Rebind.Initialize(actions)`
-5. `actions.Enable()`
-6. `UXNavigationSystem.Initialize()`
+```csharp
+UXInput.Initialize(actions, glyphDatabase);
+```
 
-销毁时会反向关闭导航、重绑定、动作查询、Glyph 数据库和 Watch。当前设计不依赖 `RuntimeInitializeOnLoadMethod` 自动启动，业务需要保证 `InputActionProvider` 早于依赖输入的系统创建。
+门面按顺序执行：
+
+1. 创建 `InputWatch`、`InputReader`、`InputRebind`、`InputGlyph`、`InputHaptics` 五个实例。
+2. `UXInput.Watch.Initialize()`：创建内部任意输入 Action，订阅设备变化。
+3. `UXInput.Rebind.Initialize()`：缓存启动前的绑定覆盖并加载本地绑定文件。
+4. `UXInput.Reader.Initialize()`：建立 `Map/Action` 查询表并启用整份 `InputActionAsset`。
+5. `UXNavigationSystem.Initialize()`：启动 UI 导航。
+
+销毁时由 `UXInput.Shutdown()` 反向关闭导航、热键、震动、Reader、Rebind、Glyph 和 Watch。当前设计不依赖 `RuntimeInitializeOnLoadMethod` 自动启动，业务需要保证 `InputActionProvider` 早于依赖输入的系统创建；它带有 `DefaultExecutionOrder(-10000)`。
+
+只允许一个 `InputActionProvider`：重复的 Provider 会输出 warning 并被忽略。禁用组件或 GameObject 不会关闭输入，只有销毁 Provider 才会执行 `Shutdown`。完整规则见 [Input 概览](../modules/input/index.md)。
 
 ## Action 查询
 
-`InputActionProvider` 会把 `InputActionAsset` 中的 Action 注册为完整路径：
+`InputReader` 在初始化时会把 `InputActionAsset` 中的 Action 注册为完整路径：
 
 ```text
 MapName/ActionName
@@ -40,9 +49,9 @@ MapName/ActionName
 示例：
 
 ```csharp
-InputAction submit = InputActionProvider.ResolveAction("UI/Submit");
+InputAction submit = UXInput.Reader.ResolveAction("UI/Submit");
 
-if (InputActionProvider.TryResolveAction("Gameplay/Jump", out InputAction jump))
+if (UXInput.Reader.TryResolveAction("Gameplay/Jump", out InputAction jump))
 {
     jump.Enable();
 }
@@ -59,6 +68,8 @@ if (InputActionProvider.TryResolveAction("Gameplay/Jump", out InputAction jump))
 | API | 说明 |
 | --- | --- |
 | `UXInput.Watch.Current` | 当前完整输入上下文。 |
+| `UXInput.Watch.BuildContext(InputDevice)` | 构建指定设备的上下文，不写设备缓存。 |
+| `UXInput.Watch.CurrentProfileId` | 当前图标 Profile 的稳定字符串 ID。 |
 | `CurrentDeviceType` | 当前设备类型，例如 `PC`、`Phone`、`SteamDeck`。 |
 | `CurrentInputType` | 当前输入类型，例如 `KeyboardMouse`、`Gamepad`、`Touch`。 |
 | `CurrentInputProfile` | 当前图标和平台 Profile，例如 `Xbox`、`PlayStation`。 |
@@ -90,7 +101,7 @@ private void OnDisable()
     UXInput.Watch.OnContextChanged -= OnInputContextChanged;
 }
 
-private void OnInputContextChanged(UXInput.Watch.InputContext context)
+private void OnInputContextChanged(InputWatch.InputContext context)
 {
     Debug.Log($"{context.InputProfile} / {context.DeviceName}");
 }
@@ -144,6 +155,13 @@ Profile 的稳定 ID、显示名、回退链和绑定组提示由 `InputProfileC
 UXInput.Rebind.Begin("UI/Submit");
 UXInput.Rebind.Begin("UI/Submit", RebindRequest.ForTarget(RebindTarget.Gamepad));
 ```
+
+重绑定行为：
+
+- 空 `overridePath` 表示禁用该绑定，不会退回原始 `path`；清除冲突时同样用空覆盖禁用冲突绑定。
+- 指定了重绑定设备或绑定分组却找不到候选时返回失败，不会改选其他设备。
+- 完成或取消时先释放旧操作并恢复 Action，再通知监听者，因此可以在回调里安全开始下一次重绑定。
+- 结果先进入暂存区，只有 `ConfirmApply` 后才应用和保存。
 
 Composite Part 重绑定：
 
@@ -235,15 +253,15 @@ if (UXInput.Reader.TryReadValue<Vector2>("Gameplay/Aim", out Vector2 aim))
 按住状态读取：
 
 ```csharp
-bool pressed = UXInput.Reader.ReadButton("UI/Submit");
-bool held = UXInput.Reader.ReadPressed("Gameplay/Sprint");
+bool pressed = UXInput.Reader.IsButtonPressed("UI/Submit");
+bool held = UXInput.Reader.IsPressed("Gameplay/Sprint");
 ```
 
 边沿与开关（状态归调用方所有）：
 
 ```csharp
-private UXInput.Reader.ButtonState _interactState;
-private UXInput.Reader.ButtonState _inventoryState;
+private InputReader.ButtonState _interactState;
+private InputReader.ButtonState _inventoryState;
 
 private void Update()
 {
@@ -262,7 +280,7 @@ private void Update()
 Composite Part：
 
 ```csharp
-bool up = UXInput.Reader.ReadCompositePartButton("Gameplay/Move", "Up");
+bool up = UXInput.Reader.IsCompositePartPressed("Gameplay/Move", "Up");
 
 if (_stepLeftState.Once(UXInput.Reader.ResolveAction("Gameplay/Move"), "Left"))
 {
@@ -277,7 +295,7 @@ if (_stepLeftState.Once(UXInput.Reader.ResolveAction("Gameplay/Move"), "Left"))
 | 事件 | 说明 |
 | --- | --- |
 | `OnRead` | `Once`、`Toggle` 等离散读取发生时触发。 |
-| `OnContinuousRead` | `ReadPressed`、`ReadButton`、`TryReadValue`、`ReadCompositePartButton` 为 true 时触发，可能高频。 |
+| `OnContinuousRead` | `IsPressed`、`IsButtonPressed`、`TryReadValue`、`IsCompositePartPressed` 为 true 时触发，可能高频。 |
 
 Composite 部分的绑定索引按 `Rebind.BindingVersion` 缓存；稳态读取为 0 分配。
 
@@ -389,7 +407,7 @@ public void SavePrepared()
 
 public void Cancel()
 {
-    UXInput.Rebind.CancelRebinding();
+    UXInput.Rebind.Cancel();
     UXInput.Rebind.DiscardPrepared();
 }
 ```
@@ -427,7 +445,7 @@ private void OnDisable()
     UXInput.Watch.OnInputProfileChanged -= OnProfileChanged;
 }
 
-private void OnProfileChanged(UXInput.Watch.InputProfile profile)
+private void OnProfileChanged(InputWatch.InputProfile profile)
 {
     Debug.Log($"Input profile: {profile}");
 }
@@ -436,7 +454,7 @@ private void OnProfileChanged(UXInput.Watch.InputProfile profile)
 ### 读取输入并震动
 
 ```csharp
-private UXInput.Reader.ButtonState _interactState;
+private InputReader.ButtonState _interactState;
 
 private void Update()
 {

@@ -26,10 +26,10 @@
 它保留的通用能力：
 
 - `HotkeyAction`：热键对应的 `InputActionReference`
-- `HotkeyPressType`：触发阶段，支持 `Started`、`Performed`、`Canceled`
+- `HotkeyPressType`：触发阶段，类型为 `EHotkeyPressType`，支持 `Started`、`Performed`、`Canceled`
 - `HotkeyConsumesInput`：触发后是否消费当前热键
 - `HotkeyHolder`：所属 `UIHolderObjectBase`
-- `AutoAssignHolder()`：自动向父级查找 Holder
+- `AssignHolderIfMissing(bool force)`：自动向父级查找 Holder
 - `OnEnable` 注册热键，`OnDisable` 反注册热键
 
 热键系统只观察 InputAction，不负责 Enable/Disable。Action 必须由输入层（如 `InputActionProvider`）启用。
@@ -41,7 +41,7 @@ using UnityEngine.UI;
 
 public sealed class CloseWindowHotkey : HotkeyComponentBase
 {
-    public override void HotkeyActionTrigger()
+    public override void TriggerHotkey()
     {
         // 执行业务逻辑，例如关闭窗口
     }
@@ -57,7 +57,7 @@ public sealed class CloseWindowHotkey : HotkeyComponentBase
 ```text
 InputAction 触发
 -> UXHotkeySystem 分发到当前有效 Holder 的热键组件
--> HotkeyComponent.HotkeyActionTrigger()
+-> HotkeyComponent.TriggerHotkey()
 -> _submitHandler.OnSubmit(_eventData)
 ```
 
@@ -101,7 +101,7 @@ using UnityEngine.UI;
 
 public sealed class SwitchTabHotkey : HotkeyComponentBase
 {
-    public override void HotkeyActionTrigger()
+    public override void TriggerHotkey()
     {
         // 切换页签
     }
@@ -114,7 +114,7 @@ public sealed class SwitchTabHotkey : HotkeyComponentBase
 
 1. `Reset` / `Awake` / `OnEnable` 查找父级 `UIHolderObjectBase`。
 2. `OnEnable` 注册热键。节点 `SetActive(false)` 或组件禁用会走 `OnDisable` 并解绑；重新启用会再注册。
-3. 热键必须从 `InputActionProvider` 解析到同一份已启用的 `InputAction`。解析失败则不注册（Development 下 warning），不会回退到 Prefab 上的 `InputActionReference.action`。
+3. 热键必须从 `UXInput.Reader.TryResolveAction` 解析到同一份已启用的 `InputAction`。解析失败则不注册（Development 下 warning），不会回退到 Prefab 上的 `InputActionReference.action`。
 4. `UXHotkeySystem` 在应用失焦 / 暂停时清掉当前按压锁定。
 5. `HotkeyComponent` 在 `EventSystem.current` 变化时才重建 `BaseEventData`。
 
@@ -195,7 +195,7 @@ AWindow 有 Cancel 热键
 | API | 说明 |
 | --- | --- |
 | `HotkeyComponentBase.HotkeyAction` | 设置或读取热键 Input Action |
-| `HotkeyComponentBase.HotkeyActionTrigger()` | 热键触发回调，业务层重写 |
+| `HotkeyComponentBase.TriggerHotkey()` | 热键触发回调，业务层重写 |
 | `UXHotkeyExtension.BindHotKey(this HotkeyComponentBase)` | 手动注册热键 |
 | `UXHotkeyExtension.UnBindHotKey(this HotkeyComponentBase)` | 手动解绑热键 |
 

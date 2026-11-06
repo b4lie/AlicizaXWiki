@@ -1,13 +1,13 @@
 # InputGlyph 输入图标
 
-`InputGlyph` 用于把 Unity Input System 的 `InputAction` 绑定或控制路径解析成 UI 图标、TMP Sprite 标签或可读文本。它只负责图标查询和 UI 展示，不负责设备监听、读取输入、重绑定或震动，这些通用输入能力见 `UXInput.md`。
+`InputGlyph` 用于把 Unity Input System 的 `InputAction` 绑定或控制路径解析成 UI 图标、TMP Sprite 标签或可读文本。它只负责图标查询和 UI 展示，不负责设备监听、读取输入、重绑定或震动，这些通用输入能力见 [UXInput](uxinput.md)。
 
 源码位置：
 
 | 内容 | 路径 |
 | --- | --- |
 | 运行时代码 | `Client/Packages/com.alicizax.unity.input/Runtime/InputGlyph` |
-| 图标查询入口 | `Client/Packages/com.alicizax.unity.input/Runtime/Input/UXInput.Glyph.cs` |
+| 图标查询入口 | `Client/Packages/com.alicizax.unity.input/Runtime/Input/InputGlyph.cs` |
 | 数据库编辑器 | `Client/Packages/com.alicizax.unity.input/Editor/InputGlyph/InputGlyphDatabaseEditor.cs` |
 | 数据库窗口 | `AlicizaX/Extension/Input/Input Glyph Database` |
 | 创建数据库 | `AlicizaX/Extension/Input/Create Input Glyph Database` |
@@ -39,16 +39,15 @@ Inspector 配置：
 | `Actions` | 项目的 `InputActionAsset`。 |
 | `Glyph Database` | 项目的 `InputGlyphDatabase`。 |
 
-运行时 `InputActionProvider` 会执行：
+运行时 `InputActionProvider` 通过 `UXInput.Initialize` 完成：
 
-1. 初始化 `UXInput.Watch`。
-2. 注入 `UXInput.Glyph.SetDatabase(glyphDatabase)`。
-3. 建立 action 查询表。
-4. 初始化 `UXInput.Rebind`。
-5. 启用 `InputActionAsset`。
-6. 初始化 `UXNavigationSystem`。
+1. 创建 `InputWatch`、`InputReader`、`InputRebind`、`InputGlyph`、`InputHaptics`，其中 `InputGlyph` 直接接收 `InputGlyphDatabase`。
+2. 初始化 `UXInput.Watch`。
+3. 初始化 `UXInput.Rebind` 并加载本地绑定覆盖。
+4. 初始化 `UXInput.Reader`，建立 action 查询表并启用 `InputActionAsset`。
+5. 初始化 `UXNavigationSystem`。
 
-不要在业务代码里单独传入 `InputGlyphDatabase`。当前设计只有一个全局数据库入口：`UXInput.Glyph.SetDatabase(...)`，通常由 `InputActionProvider` 自动设置。
+不要在业务代码里为每次查询单独传入 `InputGlyphDatabase`。数据库通常由 `InputActionProvider` 注入；运行时需要整体替换时调用 `UXInput.Glyph.SetDatabase(...)`。
 
 ## InputGlyphDatabase
 
@@ -178,7 +177,7 @@ Add Component > UI > Input Glyph Image
 | 事件 | 行为 |
 | --- | --- |
 | `OnEnable` | 自动解析目标并立即刷新。 |
-| `UXInput.Watch.OnContextChanged` | 设备 Profile 切换后刷新。 |
+| `UXInput.Watch.OnInputProfileChanged` | 设备 Profile 切换后刷新。 |
 | `UXInput.Rebind.OnBindingsChanged` | 绑定改变后刷新。 |
 
 ### InputGlyphText
@@ -235,7 +234,7 @@ public sealed class GlyphExample : MonoBehaviour
     private void Refresh()
     {
         InputAction inputAction = action != null ? action.action : null;
-        if (UXInput.Glyph.TryGetUISpriteForActionPath(inputAction, null, out Sprite sprite))
+        if (UXInput.Glyph.TryGetSprite(inputAction, null, out Sprite sprite))
         {
             icon.sprite = sprite;
         }
@@ -250,7 +249,7 @@ public sealed class GlyphExample : MonoBehaviour
 查询 TMP 标签：
 
 ```csharp
-if (UXInput.Glyph.TryGetTMPTagForActionPath(
+if (UXInput.Glyph.TryGetTag(
         action.action,
         null,
         out string tag,
@@ -267,22 +266,22 @@ else
 查询 Composite Part：
 
 ```csharp
-InputAction move = InputActionProvider.ResolveAction("Gameplay/Move");
-UXInput.Glyph.TryGetUISpriteForActionPath(move, "Up", out Sprite upSprite);
+InputAction move = UXInput.Reader.ResolveAction("Gameplay/Move");
+UXInput.Glyph.TryGetSprite(move, "Up", out Sprite upSprite);
 ```
 
 直接查询控制路径：
 
 ```csharp
-UXInput.Glyph.TryGetUISpriteForControlPath("<Gamepad>/buttonSouth", out Sprite sprite);
-UXInput.Glyph.TryGetTMPTagForControlPath("<Keyboard>/space", out string tag, out string fallback);
+UXInput.Glyph.TryGetSprite("<Gamepad>/buttonSouth", out Sprite sprite);
+UXInput.Glyph.TryGetTag("<Keyboard>/space", out string tag, out string fallback);
 ```
 
 显示文本：
 
 ```csharp
-string displayName = UXInput.Glyph.GetDisplayNameFromInputAction(action.action);
-string pathDisplay = UXInput.Glyph.GetDisplayNameFromControlPath("<Keyboard>/space");
+string displayName = UXInput.Glyph.GetDisplayName(action.action);
+string pathDisplay = UXInput.Glyph.GetDisplayName("<Keyboard>/space");
 ```
 
 ## API 速查
@@ -290,18 +289,38 @@ string pathDisplay = UXInput.Glyph.GetDisplayNameFromControlPath("<Keyboard>/spa
 | API | 说明 |
 | --- | --- |
 | `UXInput.Glyph.CurrentProfileId` | 当前输入 Profile 名称。 |
-| `UXInput.Glyph.SetDatabase(InputGlyphDatabase)` | 设置全局图标数据库。通常由 `InputActionProvider` 调用。 |
+| `UXInput.Glyph.SetDatabase(InputGlyphDatabase)` | 替换全局图标数据库并清空查询缓存。 |
 | `UXInput.Glyph.GetBindingControlPath(...)` | 获取当前 Profile 下最匹配绑定的有效控制路径。 |
-| `UXInput.Glyph.TryGetUISpriteForActionPath(...)` | 根据 Action 绑定获取 UI Sprite。 |
-| `UXInput.Glyph.TryGetTMPTagForActionPath(...)` | 根据 Action 绑定获取 TMP Sprite 标签和文本回退。 |
-| `UXInput.Glyph.TryGetUISpriteForControlPath(...)` | 根据控制路径获取 UI Sprite。 |
-| `UXInput.Glyph.TryGetTMPTagForControlPath(...)` | 根据控制路径获取 TMP Sprite 标签和文本回退。 |
-| `UXInput.Glyph.GetDisplayNameFromInputAction(...)` | 获取 Action 当前绑定的可读文本。 |
-| `UXInput.Glyph.GetDisplayNameFromControlPath(...)` | 获取控制路径的可读文本。 |
-| `UXInput.Glyph.TryGetBindingControl(...)` | 获取当前 Profile 下最匹配的 `InputBinding`。 |
+| `UXInput.Glyph.TryGetSprite(InputAction, compositePart, out Sprite)` | 根据 Action 绑定获取 UI Sprite。 |
+| `UXInput.Glyph.TryGetTag(InputAction, compositePart, out tag, out fallback)` | 根据 Action 绑定获取 TMP Sprite 标签和文本回退。 |
+| `UXInput.Glyph.TryGetSprite(string controlPath, out Sprite)` | 根据控制路径获取 UI Sprite。 |
+| `UXInput.Glyph.TryGetTag(string controlPath, out tag, out fallback)` | 根据控制路径获取 TMP Sprite 标签和文本回退。 |
+| `UXInput.Glyph.GetDisplayName(InputAction, compositePart = null)` | 获取 Action 当前绑定的可读文本。 |
+| `UXInput.Glyph.GetDisplayName(string controlPath)` | 获取控制路径的可读文本。 |
+| `UXInput.Glyph.TryGetBinding(...)` | 获取当前 Profile 下最匹配的 `InputBinding`。 |
 | `UXInput.Glyph.GetGlyphKeyFromControlPath(...)` | 把控制路径转换成数据库 glyph key。 |
 
 图标查询 API 不再允许额外传入 `InputGlyphDatabase`。这样可以避免 UI 局部传入不同数据库导致 Profile、Fallback 和缓存行为不一致。
+
+## 运行时改绑 Action
+
+`InputGlyphBehaviourBase` 提供运行时覆盖，不改 Inspector 配置：
+
+```csharp
+[SerializeField] private InputGlyphImage _icon;
+
+public void ShowBinding(InputAction action)
+{
+    _icon.SetAction(action);
+}
+
+public void ClearOverride()
+{
+    _icon.ClearRuntimeAction();
+}
+```
+
+Composite 绑定可以传第二部分，例如 `_icon.SetAction(moveAction, "Up")`。`ClearRuntimeAction()` 恢复 Inspector 中的 `Action Source Mode` 配置。
 
 ## AI 辅助配置建议
 
@@ -342,4 +361,4 @@ profiles:
 3. `InputGlyphText` 会把启用时的文本作为模板，模板中建议保留 `{0}`；缺失或非法占位符不会抛异常。
 4. `InputGlyphImage` 找不到明确图标时会使用数据库 `Placeholder`，数据库未配置占位图时清空 `Image.sprite`。
 5. `InputGlyphText` 找不到图标时会优先回退到 Input System 的可读绑定文本。
-6. 绑定变化由 `UXInput.Rebind.OnBindingsChanged` 通知，设备变化由 `UXInput.Watch.OnContextChanged` 通知。
+6. 绑定变化由 `UXInput.Rebind.OnBindingsChanged` 通知，设备变化由 `UXInput.Watch.OnInputProfileChanged` 通知。
