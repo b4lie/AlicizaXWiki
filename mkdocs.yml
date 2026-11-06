@@ -160,6 +160,11 @@ nav:
           - 数据更新与交互: extension/recyclerview/interaction.md
           - 配置与 API: extension/recyclerview/config.md
           - 导航: extension/recyclerview/navigation.md
+  - Debugger 调试器:
+      - 介绍: modules/debugger/index.md
+      - 使用方式: modules/debugger/usage.md
+      - 命令控制台: modules/debugger/command.md
+      - API 速查: modules/debugger/api.md
 
 # --- 双语站点骨架（首版未启用，保持纯中文）---------------------------
 # 启用步骤：

@@ -28,7 +28,7 @@
 | `com.alicizax.unity.ui.extension` | UI 扩展组件：`UXButton`、`UXImage`、`RecyclerView` 等 | 有 UI 就装 |
 | `com.alicizax.unity.editor.extension` | 编辑器扩展工具（Aliciza UI Toolkit 控件、快捷面板） | 推荐 |
 | `com.alicizax.unity.input` | 输入扩展：设备监听、快捷键、UI 导航、按键图标 | 需要手柄/键盘导航时 |
-| `com.alicizax.unity.debugger` | 运行时调试面板：日志、资源、内存池、音频、计时器、Event Monitor | 开发期推荐 |
+| [`com.alicizax.unity.debugger`](modules/debugger/index.md) | 运行时调试面板：日志、命令控制台、系统信息、Profiler、内存池、音频、计时器 | 开发期推荐 |
 | `com.alicizax.unity.localization` | 基于 Luban 的多语言运行时、TMP 绑定与编辑器预览 | 多语言项目 |
 | `com.alicizax.unity.installer` | 安装器本身：装核心包、导入模板 | 安装期需要 |
 

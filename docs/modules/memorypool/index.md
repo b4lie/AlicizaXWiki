@@ -166,7 +166,7 @@ Play 模式下选中场景里的 `MemoryPoolSetting`：
 - `Actions`：`Trim All`，淘汰所有空闲对象。
 - `Pools`：按程序集分组列出每个池的 `Free / Leased / Created / Target / Peak`，可导出 CSV。
 
-运行时调试面板（`DebuggerComponent`）的 `Profiler/Reference Pool` 页显示同样的数据。
+运行时调试面板（[`DebuggerComponent`](../debugger/index.md)）的 `Profiler/Reference Pool` 页显示同样的数据。
 
 ## 如何判断是否泄露
 
