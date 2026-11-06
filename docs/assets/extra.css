@@ -136,35 +136,42 @@
   font-size: 0.72rem;
 }
 
-/* ===== 表格 ===================================================== */
-/* Material 默认把表格容器设为 inline-block 收缩宽度，这里改成整行铺满 */
+/* ===== 表格（对齐 VitePress：无竖线、行分隔、表头浅底） ===== */
 .md-typeset .md-typeset__table {
   display: block;
   width: 100%;
   padding: 0;
+  overflow-x: auto;
 }
 
 .md-typeset table:not([class]) {
   width: 100%;
-  font-size: 0.72rem;
-  border: 1px solid var(--md-default-fg-color--lightest);
-  border-radius: 0.6rem;
-  overflow: hidden;
+  border: none;
+  border-radius: 0;
+  border-collapse: collapse;
+  font-size: 0.7rem;
 }
 
 .md-typeset table:not([class]) th {
-  background: var(--md-default-fg-color--lightest);
-  font-weight: 700;
+  padding: 0.6rem 0.9rem;
+  background: var(--md-default-bg-color--light);
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+  font-weight: 600;
 }
 
 .md-typeset table:not([class]) td {
-  border-top: 1px solid var(--md-default-fg-color--lightest);
+  padding: 0.6rem 0.9rem;
+  border-top: none;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-typeset table:not([class]) tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .md-typeset table:not([class]) tbody tr:hover td {
-  background: rgba(63, 81, 181, 0.06);
+  background: rgba(255, 255, 255, 0.03);
 }
-
 /* ===== 步骤 ===================================================== */
 .md-typeset .steps ol {
   margin: 0;
@@ -228,25 +235,94 @@
   }
 }
 
-/* ===== 侧边栏导航（参考 Fink Framework 的分组式排版） ========== */
-/* 深色主题再压暗一档，接近参考站的近黑底 */
+/* ===== 侧边栏导航（对齐 Fink Framework / VitePress 默认主题） ========== */
+/* 深色主题：取自参考站 VitePress 的实测值 */
 [data-md-color-scheme="slate"] {
-  --md-default-bg-color: #15171c;
-  --md-default-bg-color--light: #1a1d24;
-  --md-default-fg-color: #e2e5ec;
-  --md-default-fg-color--light: #9aa1b2;
-  --md-default-fg-color--lighter: #6d7486;
-  --md-default-fg-color--lightest: rgba(255, 255, 255, 0.07);
-  --md-code-bg-color: #1b1e25;
-  --md-typeset-a-color: #7d9dff;
+  --md-default-bg-color: #1b1b1f;
+  --md-default-bg-color--light: #202127;
+  --md-default-fg-color: #dfdfd6;
+  --md-default-fg-color--light: #98989f;
+  --md-default-fg-color--lighter: #6b6b72;
+  --md-default-fg-color--lightest: #2e2e32;
+  --md-code-bg-color: #161618;
+  --md-typeset-a-color: #a8b1ff;
+  --md-primary-fg-color: #a8b1ff;
+  --md-primary-bg-color: #1b1b1f;
 }
+
+/* 浅色主题：同样对齐参考站 */
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #ffffff;
+  --md-default-fg-color: #3c3c43;
+  --md-default-fg-color--light: #67676c;
+  --md-default-fg-color--lightest: #e2e2e3;
+  --md-code-bg-color: #f6f6f7;
+  --md-typeset-a-color: #3451b2;
+  --md-primary-fg-color: #3451b2;
+}
+
+/* 顶栏：深色底 + 1px 分隔线，高度 64px（参考站同样 64px） */
+[data-md-color-scheme="slate"] .md-header {
+  background-color: #1b1b1f;
+  border-bottom: 1px solid #2e2e32;
+  box-shadow: none;
+}
+
+[data-md-color-scheme="slate"] .md-header__title,
+[data-md-color-scheme="slate"] .md-header__topic {
+  color: #dfdfd6;
+}
+
+/* 正文字号与行高 */
+.md-typeset {
+  font-size: 0.8rem;
+  line-height: 1.75;
+}
+
+/* 标题层级：32 / 24 / 20，600 字重 */
+.md-typeset h1 {
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.md-typeset h2 {
+  margin-top: 2.4rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+  border-bottom: none;
+  font-size: 1.2rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.md-typeset h3 {
+  margin-top: 1.6rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* 正文链接与参考站一致：中等字重 + 品牌蓝 */
+.md-typeset a {
+  font-weight: 500;
+}
+
+/* 代码块圆角 8px，行内代码 14px */
+.md-typeset pre > code {
+  border-radius: 0.4rem;
+}
+
+.md-typeset code {
+  font-size: 0.7rem;
+}
+
 
 /* 基础行距与字号 */
 .md-nav--primary .md-nav__link {
-  padding: 0.45rem 0;
+  padding: 0.4rem 0;
   color: var(--md-default-fg-color--light);
-  font-size: 0.72rem;
-  line-height: 1.45;
+  font-size: 0.7rem;
+  line-height: 1.5;
   transition: color 0.15s ease;
 }
 
@@ -256,12 +332,12 @@
 
 /* 一级分组：可折叠标题，上方分隔线 + 加粗 */
 .md-nav--primary > .md-nav__list > .md-nav__item--nested > .md-nav__link {
-  margin-top: 1.15rem;
+  margin-top: 1.1rem;
   padding-top: 1rem;
   border-top: 1px solid var(--md-default-fg-color--lightest);
   color: var(--md-default-fg-color);
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.7rem;
+  font-weight: 700;
   letter-spacing: 0.01em;
 }
 
@@ -273,26 +349,26 @@
 
 /* 展开后的分组条目缩进 */
 .md-nav--primary > .md-nav__list > .md-nav__item--nested > .md-nav > .md-nav__list {
-  padding-left: 0.95rem;
+  padding-left: 1rem;
 }
 
 /* 二级分组（基础控件 / 输入与导航 / 虚拟列表） */
 .md-nav--primary .md-nav[data-md-level="1"] > .md-nav__list > .md-nav__item--nested > .md-nav__link {
   margin-top: 0.5rem;
   color: var(--md-default-fg-color);
-  font-size: 0.74rem;
-  font-weight: 600;
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
 .md-nav--primary .md-nav[data-md-level="1"] > .md-nav__list > .md-nav__item--nested > .md-nav > .md-nav__list {
-  padding-left: 0.95rem;
+  padding-left: 1rem;
 }
 
 /* 当前页高亮 */
 .md-nav--primary .md-nav__link--active,
 .md-nav--primary .md-nav__link--active:hover {
   color: var(--md-typeset-a-color);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 /* 展开箭头：细一点，展开时旋转 90° */
@@ -316,7 +392,7 @@
 /* 桌面端加宽左侧导航，长中文标题不换行 */
 @media screen and (min-width: 76.25em) {
   .md-sidebar--primary {
-    width: 12.8rem;
+    width: 13.2rem;
   }
 }
 
@@ -326,8 +402,8 @@
 /* 顶层直链（快速开始）与分组标题同权重，但不带折叠箭头 */
 .md-nav--primary > .md-nav__list > .md-nav__item:not(.md-nav__item--nested) > .md-nav__link {
   color: var(--md-default-fg-color);
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
 /* 表格里的长包名不折断，必要时横向滚动 */
@@ -339,4 +415,66 @@
 
 .md-typeset .md-typeset__table {
   overflow-x: auto;
+}
+
+/* 顶栏搜索框：深色底 + 描边，贴参考站样式 */
+[data-md-color-scheme="slate"] .md-search__form {
+  background-color: #161618;
+  border: 1px solid #2e2e32;
+  border-radius: 0.35rem;
+  box-shadow: none;
+}
+
+[data-md-color-scheme="slate"] .md-search__input {
+  color: #dfdfd6;
+}
+
+[data-md-color-scheme="slate"] .md-search__input::placeholder {
+  color: #98989f;
+}
+
+[data-md-color-scheme="slate"] .md-search__icon {
+  color: #98989f;
+}
+
+/* 浅色主题顶栏：白底 + 细分隔线（VitePress 浅色一致） */
+[data-md-color-scheme="default"] .md-header {
+  background-color: #ffffff;
+  border-bottom: 1px solid #e2e2e3;
+  box-shadow: none;
+  color: #3c3c43;
+}
+
+[data-md-color-scheme="default"] .md-header__title,
+[data-md-color-scheme="default"] .md-header__topic {
+  color: #3c3c43;
+}
+
+[data-md-color-scheme="default"] .md-header .md-logo img {
+  filter: none;
+}
+
+[data-md-color-scheme="default"] .md-header .md-source {
+  color: #3c3c43;
+}
+
+[data-md-color-scheme="default"] .md-search__form {
+  background-color: #f6f6f7;
+  border: 1px solid #e2e2e3;
+  border-radius: 0.35rem;
+  box-shadow: none;
+}
+
+[data-md-color-scheme="default"] .md-search__input {
+  color: #3c3c43;
+}
+
+[data-md-color-scheme="default"] .md-search__input::placeholder {
+  color: #67676c;
+}
+
+/* 缩进分组加左侧细线（参考站 level-1 条目的 border-left） */
+.md-nav--primary > .md-nav__list > .md-nav__item--nested > .md-nav > .md-nav__list,
+.md-nav--primary .md-nav[data-md-level="1"] > .md-nav__list > .md-nav__item--nested > .md-nav > .md-nav__list {
+  border-left: 1px solid var(--md-default-fg-color--lightest);
 }
