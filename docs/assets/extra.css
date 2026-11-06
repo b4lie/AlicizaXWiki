@@ -478,3 +478,23 @@
 .md-nav--primary .md-nav[data-md-level="1"] > .md-nav__list > .md-nav__item--nested > .md-nav > .md-nav__list {
   border-left: 1px solid var(--md-default-fg-color--lightest);
 }
+
+/* 顶栏图标与仓库徽标：跟随顶栏文字色（之前继承 primary-bg 导致深底上不可见） */
+[data-md-color-scheme="slate"] .md-header .md-icon,
+[data-md-color-scheme="slate"] .md-header .md-source,
+[data-md-color-scheme="slate"] .md-header .md-source__repository,
+[data-md-color-scheme="slate"] .md-header .md-source__facts,
+[data-md-color-scheme="slate"] .md-header .md-header__title,
+[data-md-color-scheme="slate"] .md-header .md-header__topic {
+  color: #dfdfd6;
+}
+
+[data-md-color-scheme="slate"] .md-header .md-source__fact {
+  color: #98989f;
+}
+
+[data-md-color-scheme="default"] .md-header .md-icon,
+[data-md-color-scheme="default"] .md-header .md-source__facts,
+[data-md-color-scheme="default"] .md-header .md-source__repository {
+  color: #3c3c43;
+}
