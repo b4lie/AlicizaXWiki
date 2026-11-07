@@ -47,6 +47,8 @@
 
 也可以手动创建 `GameObject` 并添加 `AlicizaX.Debugger.DebuggerComponent`。
 
+`com.unity.inputsystem` 是**可选依赖**：`AlicizaX.Debugger.asmdef` 用 `versionDefines` 在包存在时定义 `INPUTSYSTEM_SUPPORT`，未安装时不编译新输入分支，命令面板热键回退到旧 `Input`。Active Input Handling 选 `Input System Package (New)` 时必须安装该包，否则热键不会响应（`Both` 模式仍走旧 `Input`）。
+
 `DebuggerComponent` 会在运行时创建或复用 `EventSystem`，并创建自己的 `UIDocument` / `PanelSettings`：
 
 - Inspector 指定了 `Panel Settings` 时先克隆该配置。

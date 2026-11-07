@@ -13,7 +13,7 @@
 
 也可以手动创建 `GameObject` 并添加 `AlicizaX.Debugger.DebuggerComponent`。
 
-`AlicizaX.Debugger` 的 asmdef 引用 `Unity.InputSystem`，工程需要安装并启用 Input System；模板项目已经包含。Demo 场景和业务场景都建议只保留一个 `DebuggerComponent`。
+`com.unity.inputsystem` 是可选依赖：包存在时 asmdef 通过 `versionDefines` 定义 `INPUTSYSTEM_SUPPORT`，未安装则热键回退旧 `Input`；模板项目已经包含。Demo 场景和业务场景都建议只保留一个 `DebuggerComponent`。
 
 `DebuggerComponent.Awake` 会查找或注册 `IDebuggerService`，然后准备运行时 UI：
 
@@ -344,3 +344,4 @@ public sealed class PlayerDebugWindow : IDebuggerWindow
 3. 布局和日志过滤会写入 `PlayerPrefs`，排查显示异常时先用 `ResetLayout()` 恢复默认布局。
 4. `LogNode` 是池化对象，不要跨帧保存引用。
 5. `DebuggerComponent` 依赖框架服务容器；没有框架根节点时 `AppServices.IsAvailable` 为 `false`，组件会在 `Awake` 记录错误并禁用。
+6. `com.unity.inputsystem` 是可选依赖（asmdef `versionDefines` → `INPUTSYSTEM_SUPPORT`）：未安装时命令面板热键走旧 `Input`；Active Input Handling 设为 `Input System Package (New)` 时必须安装，否则热键不响应。
