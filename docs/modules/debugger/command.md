@@ -36,8 +36,8 @@ if (debugger != null)
 | 提交命令 | `Return` | `Submit Key` |
 | 选择下一条建议 | `Tab` | `Next Suggestion` |
 | 选择上一条建议 | `Shift + Tab` | `Prev Suggestion` |
-| 上一条历史命令 | `UpArrow` | `Next History` |
-| 下一条历史命令 | `DownArrow` | `Prev History` |
+| 上一条历史命令 | `UpArrow` | `Previous History` |
+| 下一条历史命令 | `DownArrow` | `Next History` |
 | 取消正在执行的 action | `Ctrl + C` | `Cancel Actions` |
 
 快捷键都在 `DebuggerComponent` Inspector 的 `Command` 区域修改，不写死在代码里。

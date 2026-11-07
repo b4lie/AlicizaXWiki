@@ -24,7 +24,7 @@
 
 窗口树是唯一数据源：`IDebuggerService.DebuggerWindowRoot` 既用于路径查找和选中，也用于生成侧边栏，不存在第二份菜单结构。
 
-内置窗口都以 `DebuggerComponent` 的嵌套类实现，按文件拆分在 `Runtime/Debugger/Windows` 下。其中纯信息页（`Information/System`、`Environment`、`Screen`、`Graphics`、`Other/Scene`、`Other/Quality`）通过 `[DebuggerWindow]` 自动注册；`Console`、`Command`、需要序列化配置的窗口和泛型内存采样页仍显式注册。
+内置窗口都以 `DebuggerComponent` 的嵌套类实现，按文件拆分在 `Runtime/Debugger/Windows` 下。其中纯信息页（`Information/System`、`Environment`、`Screen`、`Graphics`、`Other/Scene`、`Other/Quality`）通过 `[DebuggerWindow]` 自动注册；`Console`、`Command`、`Other/Settings`、`Information/Input`、时间和 Profiler 页仍显式注册。
 
 ## 功能一览
 

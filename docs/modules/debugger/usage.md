@@ -17,11 +17,12 @@
 
 `DebuggerComponent.Awake` 会查找或注册 `IDebuggerService`，然后准备运行时 UI：
 
+- 如果 `AppServices.IsAvailable` 为 `false`（框架服务容器还没创建），会记录错误并禁用组件，不再继续创建 UI。
 - 运行时创建一个专用 `EventSystem`；场景中已有 `EventSystem` 时直接复用。
 - 创建自己的 `UIDocument` 和 `PanelSettings`，不改动工程里已有的 UI 配置。
 - `Panel Settings` 为空时，先读 `Resources/DebuggerPanelSettings`，再回退到运行时默认配置。
 
-`OnDestroy` 会销毁自己创建的 `UIDocument`、`PanelSettings`、`EventSystem` 和系统字体。
+`OnDestroy` 会注销全部调试窗口，并销毁自己创建的 `UIDocument`、`PanelSettings`、`EventSystem` 和系统字体。
 
 ## 访问服务
 
@@ -170,7 +171,7 @@ public sealed class DebugLogExportExample
 }
 ```
 
-`LogNode` 来自框架 `MemoryPool`，`GetRecentLogs` 返回的是只读引用。调用方不要手动 `Release`，也不要长期缓存这些节点：`Console` 清空或裁剪日志后，节点会归还池并可能被复用。
+`LogNode` 来自框架 `MemoryPool`，`GetRecentLogs` 返回的是只读引用。调用方只能当前帧读取，不得跨帧缓存或手动 `Release`：`Console` 清空或裁剪日志后，节点会归还池并被复用。
 
 `LogNode` 字段：
 
@@ -181,6 +182,7 @@ public sealed class DebugLogExportExample
 | `LogType` | Unity `LogType` |
 | `LogMessage` | 日志正文 |
 | `StackTrack` | 堆栈信息 |
+| `DisplayText` | 列表单行文本，包含本地时间和帧号；首次读取时生成并缓存 |
 
 ## Stats 悬浮窗
 
@@ -312,9 +314,10 @@ public sealed class PlayerDebugWindow : IDebuggerWindow
 
 - 本包程序集始终扫描；其它程序集需要填到 `DebuggerComponent` 的 `Auto Register Assemblies`（序列化字段 `m_AutoRegisterAssemblyNames`）。
 - 标签路径为空时回退为 `Auto/<类名>`。
-- 额外程序集里没有标签的窗口同样回退到 `Auto/<类名>`；本包内置窗口必须显式声明路径，避免把内部窗口整体搬进 `Auto/`。
-- 路径重复时保留先注册的一方（手动注册先于扫描执行），扫描侧打印一条 warning 后跳过。
-- 自动注册的窗口必须有无参构造；需要 `Initialize` 参数或依赖 `[SerializeField]` 配置的窗口继续用手动注册。
+- 额外程序集里没有标签的窗口同样回退到 `Auto/<类名>`；本包中需要自动注册的内置窗口必须显式声明路径，未加标签的内部窗口不会被扫描注册。
+- 自动扫描在 `DebuggerComponent.Start` 执行。扫描前已经手动注册的路径优先；扫描到重复路径时保留先注册的一方并输出 warning。扫描之后再手动注册同一路径会抛 `GameFrameworkException`。
+- 自动注册的窗口必须有无参构造（非 public 也可以）；需要 `Initialize` 参数或依赖 `[SerializeField]` 配置的窗口继续用手动注册。
+- 自动扫描依赖内置 `DebuggerService`；换成自定义 `IDebuggerService` 实现时扫描会跳过并输出 warning。
 - IL2CPP 会裁剪“只被反射引用”的类型，扩展程序集必须加 `link.xml`（`<assembly fullname="Your.Gameplay" preserve="all" />`）或 `[Preserve]`，否则发布包里窗口会消失。本包通过 `Runtime/Debugger/link.xml` 保留自身程序集。
 
 ### 手动注册
@@ -340,4 +343,4 @@ public sealed class PlayerDebugWindow : IDebuggerWindow
 2. 生产包关闭调试器时，除了设置 `Active Window`，也要确认没有代码在运行时把 `ActiveWindow` 设回 `true`。
 3. 布局和日志过滤会写入 `PlayerPrefs`，排查显示异常时先用 `ResetLayout()` 恢复默认布局。
 4. `LogNode` 是池化对象，不要跨帧保存引用。
-5. `DebuggerComponent` 依赖框架运行时；只安装 `com.alicizax.unity.debugger` 而没有框架根节点时，调试面板无法正常注册。
+5. `DebuggerComponent` 依赖框架服务容器；没有框架根节点时 `AppServices.IsAvailable` 为 `false`，组件会在 `Awake` 记录错误并禁用。
