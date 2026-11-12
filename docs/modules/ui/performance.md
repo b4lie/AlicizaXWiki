@@ -1,52 +1,76 @@
-# 性能预算
+# 性能与缓存
 
-以下数据只来自 Unity 2022.3.62f3 编辑器（EditMode 和 PlayMode，测试 `UIAllocationCases`、`UIPerformanceTests`、`UIHotPathTests`），不代表 IL2CPP、HybridCLR 和小游戏平台。
+UI 的性能主要取决于三件事：多少视图在每帧更新、多少窗口留在缓存、每帧产生多少托管分配。先按使用方式控制这三项，再用 Profiler 验证。
 
-常规热路径：
+## 只让需要的视图更新
 
-| 路径 | 实测 | 用例 |
-| --- | --- | --- |
-| 稳态 `Tick`（1、16、512 个更新视图） | **0 B** | `tick-steady-*` |
-| 活动 tick 转场（1、16、64 个） | **0 B** | `tick-transitions-*` |
-| 缓存窗口关闭、重开，首次和稳态 | **0 B** | `cached-*-first`、`cached-cycle-*` |
-| 带缓存时长的窗口开关，稳态 | **0 B**（首次关闭见下表） | `timed-cache-cycle` |
-| tick 转场开关，首次和稳态 | **0 B** | `transition-cycle-*` |
-| 同步完成的 `ShowUI<T>`（已打开、已缓存），新 `T` 首次调用和稳态 | **0 B**（进程内首次见下表） | `async-show-*` |
-| 关闭时有 1–2 个等待者 | **0 B** | `close-two-waiters` |
-| Widget 无参 `Open`、`Close`，有无 tick 转场 | **0 B** | `widget-toggle-*` |
-| 已加载 Tab 切换 | **0 B** | `tab-switch-loaded` |
-| 方法组注册后的事件暂停和恢复 | **0 B** | `event-resume-method-group` |
-| 复用代理容量、业务缓存委托时的 `AddUIEvent` | **0 B** | `event-add-cached-delegate` |
-| Holder 事件触发、只读查询 | **0 B** | `holder-event-invoke`、`query-paths` |
-| 全部 `UITransitionPreset` 的 `Advance` | **0 B** | `preset-advance-*` |
+`OnUpdate` 只对**重写了它**的窗口/Widget 生效，不需要额外标签：
 
-低频路径：
+```csharp
+[Window(UILayer.UI, UICacheTime.None)]
+public sealed class BattleHudWindow : UIWindow<ui_BattleHudWindow>
+{
+    protected override void OnUpdate(float deltaTime)
+    {
+        RefreshHpBar(deltaTime);
+    }
+}
+```
 
-| 路径 | 实测或对象 | 触发条件 | 释放责任 |
-| --- | --- | --- | --- |
-| 进程内首次 `ShowUI` | 最多 244 B，4 次分配；PlayMode 实测 0 B，随首次调用的时机变化 | 进程内一次，UniTask 和泛型静态初始化 | 进程持有 |
-| 创建 Widget（不含 Prefab 实例化成本的差异） | 约 1.5 KB，12–13 次分配，含测试夹具创建 GameObject | 每实例一次 | 随视图回收 |
-| 首次异步加载 | 约 1.0–4.8 KB，16–54 次分配；高值出现在它先于其他异步路径运行时 | 每次实际加载 | 加载结束释放；runner 由 UniTask 池持有 |
-| 带缓存时长的窗口首次关闭 | 646 B，8 次分配，来源未逐个确认；`AddTimer` 路径没有实例级 `new` | 实测首次；之后 0 B | 未确认 |
-| 视图首次有等待者 | 64 B，1 次分配（2 项等待数组） | 每个视图首次 `await` 转场 | 随视图回收 |
-| 事件代理首次注册 | 160 B 的订阅数组（4 项，不够时翻倍）；每种事件类型另有一个静态委托；业务写方法组时再加委托 | 代理首次注册；每种事件类型一次 | 数组随代理留在对象池；静态委托进程持有 |
-| 带一个值类型参数打开 | 60 B，2 次分配（数组和装箱） | 用户操作级别 | 关闭或替换时释放 |
-| 导航 | `NavigationCommand`、UCS、CTS、`UIRouteEntry`，有参数时再加数组 | 每次导航 | 命令结束释放，条目随 history |
-| 异步转场源 | CTS 和 UniTask runner | 非 tick 转场每次播放 | 播放结束释放 |
-| 未完成任务上调用 `Forget()` | UniTask 池化的 `StateTuple` | 业务调用 `CloseSelf().Forget()` 且有转场 | UniTask 池 |
-| Tab 排队切换 | `TabRequest`、UCS | 目标未加载，或上一 Tab 还在关闭 | 请求结束释放 |
-| 钩子内重入打开 | 一个 `UniTaskCompletionSource<bool>` | 在钩子内调用 `ShowUI` | 逻辑打开完成释放 |
-| 同一转场超过 2 个等待者 | 一次数组扩容 | 第 3 个等待者 | 随视图回收 |
-| 反射注册兜底 | 特性读取、注册表项和创建委托，打 Warning | 未注册类型首次使用 | 注册表持有到进程结束 |
+- 没有重写 `OnUpdate` 的视图不会进入更新列表，不会产生每帧调用。
+- 视图处于 `Opening` / `Opened` 且父级启用时才更新；`Closed`、`Closing`、父窗口隐藏时会暂停。
+- 更新列表按视图进入顺序执行，不要依赖 Widget 之间的执行顺序。
+- `OnUpdate` 内避免 `new`、LINQ、字符串拼接、闭包和装箱；高频文本改用缓存或 `SetText` 复用。
 
-每帧或每次高频调用不应出现新的托管分配；任何无法消除的分配都必须在上表中登记触发条件、数量、频率与释放责任。
+## 缓存窗口要设上限
 
-Holder 所在 GameObject 被外部销毁时，所属视图立即按 `DestroyNow` 释放。例外：从未激活过的 Holder 不会收到 `OnDestroy`，视图收不到通知，之后访问会抛 `MissingReferenceException`。Prefab 根节点应保持激活。
+`[Window]` 的 `cacheTime`：
 
-隐藏只切显示状态：窗口切 layer 和 `Canvas.enabled`，Widget 切 `CanvasGroup`。隐藏和缓存期间，节点上的 MonoBehaviour 继续运行，也不会触发 `OnEnable`、`OnDisable`，进出缓存也不触发 `OnTransformParentChanged`。带 `Update`、粒子或 Animator 的组件，要在 `OnClose` 和 `OnOpen` 里自行停止和恢复。
+| 值 | 行为 |
+| --- | --- |
+| `UICacheTime.None`（0） | 关闭即销毁 |
+| `UICacheTime.Forever`（-1） | 常驻缓存 |
+| 正数 | 关闭转场结束后按秒计时，到期销毁 |
 
-## 用 Profiler 看批次
+建议：
 
-![Profiler 中的 UI 合批](../../assets/ui/uximage-profile.png)
+- 高频开关的弹窗用正数缓存，不要全部 `Forever`。
+- 大界面或带大量贴图的窗口优先 `None`，避免缓存长期占内存。
+- 缓存窗口被再次 `Show` 时会清掉缓存计时并重新打开；不会重新执行 `OnInitialize`。
+- 需要彻底回收时用 `CloseUI<T>(force: true)` 或在 Inspector 的 `Cached Windows` 中确认缓存数量。
 
-*Profiler 的 UI 详情面板：Batch 1 的打断原因是 `Different Material Instance`，212 个 GameObject 被拆成两批。同层 UI 混用多套材质或图集时会额外增加批次，合并图集、复用材质能直接减少 draw call。*
+## 避免每帧分配
+
+- 事件订阅放在 `OnInitialize`，用 `EventProxy.AddUIEvent`；视图隐藏时自动暂停，不需要每帧判断。
+- 不要在 `OnUpdate` 里申请临时集合、创建委托或拼接 UI 文本。
+- 打开/关闭是低频操作；不要每帧调用 `ShowUI` / `CloseUI` 来模拟状态切换。
+- 需要等待动画时使用 `AwaitTransition`；不需要结果时不要在每个高频路径上 `await` 关闭任务。
+- 页签和 Widget 优先复用实例；不要每次打开都重新创建 Prefab。
+
+## 层级与批次
+
+- 每层最多 200 个窗口，超过会在编辑器中断言；打开大量弹窗时要拆分或及时关闭。
+- 窗口的 `Canvas.sortingOrder` 由 UI 服务维护，不要手动修改。
+- 同层 UI 混用多套材质或图集会增加批次；合并图集、复用材质通常比微调代码更有效。
+
+## 隐藏窗口不会停止组件
+
+窗口隐藏时只关闭 `Canvas` / `CanvasGroup` 的可见性，节点上的 `MonoBehaviour` 仍在运行，也不会触发 `OnEnable` / `OnDisable`。因此：
+
+- 带 `Update`、粒子、Animator 或视频的组件，要在 `OnClose` 停止、`OnOpen` 恢复。
+- 不要把“窗口不可见”当成“对象已禁用”。
+- 需要彻底停止时，Widget 用 `Destroy()`，窗口用 `CloseUI(force: true)`。
+
+## 用工具确认
+
+- Play Mode 选中 `UIComponent`，查看 `UI RuntimeDebug` 的 Open / Cache / Update / Block 数量和缓存列表。
+- `Navigation RuntimeDebug` 查看 history；history 不应无限增长。
+- Profiler 中观察 `Canvas.BuildBatch`、`Canvas.SendWillRenderCanvases` 和 UI 相关 GC 分配。
+- 框架的 UI 测试位于 `Client/Packages/com.alicizax.unity.framework/Tests/UI`，修改热路径后先跑相关测试，再在目标平台复测。
+
+## 注意事项
+
+1. 缓存不是越多越好；缓存窗口仍然占用内存，也会出现在 Inspector 的 Cached Windows 中。
+2. 不要把窗口当作高频数据容器；列表数据用 RecyclerView，定期刷新的内容放在 Widget 里按需更新。
+3. 只重写真正需要的 `OnUpdate`，不要为了“以后可能用到”给所有窗口加重写。
+4. 转场的 alpha 预设需要 `CanvasGroup`；窗口的 Canvas 显隐方式不同，优先使用位置/缩放转场。

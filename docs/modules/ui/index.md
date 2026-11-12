@@ -1,50 +1,84 @@
 # UI 模块
 
+UI 模块负责窗口的创建、打开、关闭、层级、缓存、转场和生命周期，也提供 Widget、Tab 窗口、页面导航和 UI 事件自动解绑。
 
-UI 模块负责窗口创建、显示、关闭、层级、缓存、生命周期、Widget、Tab 窗口、页面导航和 UI 事件自动解绑。
+源码位置：
 
-主要代码位置：
-
-- `Client/Packages/com.alicizax.unity.framework/Runtime/Modules/UI`
+- 运行时代码：`Client/Packages/com.alicizax.unity.framework/Runtime/Modules/UI`
 - 示例业务代码：`Client/Assets/Scripts/Hotfix/GameLogic/UI`
 
-常用入口：
+## 先跑起来
 
-```csharp
-using AlicizaX;
-using AlicizaX.UI.Runtime;
-
-IUIService ui = GameApp.UI;          // 门面（IService + 下列 4 组细分接口）
-IUIPanelService panel = GameApp.UI;   // 面板开关/查询
-IUINavigationService router = GameApp.UI; // 页面导航
-IUIRootService root = GameApp.UI;     // 根节点/相机/层级
-IUIBlockService block = GameApp.UI;   // 全屏遮挡层
-```
-
-## 本模块页面
-
-| 页面 | 内容 |
-| :--- | :--- |
-| [元数据与生命周期](lifecycle.md) | `UIMetaRegistry` / `UIResRegistry`、生命周期钩子、Holder 事件、手动创建 Holder |
-| [打开、关闭与查询](window.md) | 打开/关闭契约、`ShowUI` 系列、查询、并发模型、全屏遮挡、日志语义 |
-| [路由与转场](router.md) | `UIRouter` 导航、`NavigateTo` / `Back`、转场源与 `Snap` |
-| [Widget 与 Tab](widget.md) | `UIWidget`、Tab 窗口、UI 事件自动解绑 |
-| [性能预算](performance.md) | 热路径 0 B 分配清单、低频路径与 Profiler 观察 |
-| [编辑器工具](lifecycle.md#uisetting) | `UISetting` 三个页签、生成菜单、生成器诊断 |
-
-## 使用前提
-
-启动场景需要挂载并初始化这些组件：
+启动场景需要：
 
 - `TimerComponent`
 - `ResourceComponent`
 - `UIComponent`
 
-`UIComponent` Inspector 中需要配置 `uiRoot` 预制体。运行时会实例化 UI 根节点（必须含 `Canvas` 且 `worldCamera` 有效），注册 `IUIService`，并按 `UILayer` 创建层级节点；`TimerComponent` 必须已注册，否则 UI 初始化失败。
+`UIComponent` 的 `UI Root Prefab` 指向一个包含 `Canvas` 且 `worldCamera` 已配置的 UI 根预制体。运行时它实例化根节点、按 `UILayer` 创建层级，并注册 `IUIService`。`TimerComponent` 必须先注册，否则 UI 初始化失败。
 
-UI 模块没有自己的 MonoBehaviour 驱动，**所有每帧工作由 `AppServiceRoot.Update → ServiceWorld.Tick` 驱动**（窗口更新与转场）。脱离该驱动（例如自建测试环境）时需要显式调用 `IServiceTickable.Tick(deltaTime)`。
+`UIComponent` 还提供：
 
-## UI 层级
+| 字段 | 用途 |
+| --- | --- |
+| `UI Root Prefab` | UI 根预制体，必须包含 `Canvas` 和有效的 `worldCamera` |
+| `Orthographic` | 是否使用正交相机；正交时沿用预制体上的裁剪面设置 |
+| `Near Clip Plane` / `Far Clip Plane` | 透视相机的裁剪面 |
+
+## 第一个窗口
+
+窗口逻辑类继承 `UIWindow<Holder>`，用 `[Window]` 声明层级和缓存时间：
+
+```csharp
+using AlicizaX.UI.Runtime;
+using Cysharp.Threading.Tasks;
+
+[Window(UILayer.UI, UICacheTime.Forever)]
+public sealed class HomeWindow : UIWindow<ui_HomeWindow>
+{
+    protected override void OnInitialize()
+    {
+        baseui.BtnShop.onClick.AddListener(() => GameApp.UI.ShowUI<ShopWindow>().Forget());
+    }
+}
+```
+
+Holder 由生成器生成，并在类上带 `[UIRes]`，不需要手写加载代码。
+
+打开和关闭：
+
+```csharp
+await GameApp.UI.ShowUI<HomeWindow>();
+
+GameApp.UI.CloseUI<HomeWindow>();
+
+// 窗口逻辑类内部可以调用 CloseSelf()。
+```
+
+`ShowUI` 在窗口逻辑打开（`OnOpen` 执行完）后返回，不等开场转场；需要等动画时用 `AwaitTransition`：
+
+```csharp
+HomeWindow home = await GameApp.UI.ShowUI<HomeWindow>();
+await home.AwaitTransition();
+```
+
+## 入口
+
+```csharp
+using AlicizaX.UI.Runtime;
+
+IUIService ui = GameApp.UI;                       // 打开/关闭/查询/层级/遮挡
+IUINavigationService nav = GameApp.UI.Navigation; // 页面导航
+```
+
+导航页面和普通弹窗分开用：
+
+- 页面切换：`GameApp.UI.Navigation.NavigateTo<T>()`、`Back()` 等。
+- 弹窗、Tips、独立面板：`GameApp.UI.ShowUI<T>()`、`CloseUI<T>()`。
+
+不要把同一个页面同时交给导航和 `ShowUI` 管理。
+
+## 层级
 
 ```csharp
 public enum UILayer
@@ -55,33 +89,44 @@ public enum UILayer
     Popup = 3,
     Tips = 4,
     Top = 5,
-    All = 6,
 }
 ```
 
-约定：
+| 层 | 用途 |
+| --- | --- |
+| `Background` | 背景 |
+| `Scene` | 2D 场景信息，例如血条、飘字 |
+| `UI` | 普通主界面、全屏界面 |
+| `Popup` | 弹窗，可同时存在多个 |
+| `Tips` | Toast、确认框、跑马灯 |
+| `Top` | 新手引导、最高层遮罩 |
 
-- `Background`：背景层。
-- `Scene`：场景 2D 信息，例如血条、飘字。
-- `UI`：普通主界面、全屏界面。
-- `Popup`：弹窗层。
-- `Tips`：提示、Toast、跑马灯。
-- `Top`：最高层，例如新手引导遮罩。
-- `UILayer.All` 不是可显示层，只用于数组长度。
+每层最多 200 个窗口；超过会在编辑器中断言。窗口的 `sortingOrder` 由 UI 服务按层级和打开顺序维护，业务不要手动改 Canvas 排序。
 
-`UIMetaRegistry.Register` 在注册期校验层级，传入 `UILayer.All` 会抛 `ArgumentOutOfRangeException`。
+## 调试
 
-每个层最多 **200** 个窗口（`LAYER_DEEP / WINDOW_DEEP`）；超出会在编辑器中断言，避免 Canvas `sortingOrder` 与下一层重叠。置顶只给目标窗口分配新序号，关闭中间窗口不改变其他窗口的 `sortingOrder`；序号用尽时整层重编号一次，因此层内窗口接近 200 个时置顶会退化为 O(层内窗口数)。
+Play Mode 下选中 `UIComponent`：
+
+- `UI RuntimeDebug`：Open / Cache / Update / Block 数量、层级窗口、缓存列表、运行时异常提示。
+- `Navigation RuntimeDebug`：当前页面、`CanBack` 和 history。
+
+这两个面板只读，不会修改运行状态。
+
+## 本模块页面
+
+| 页面 | 内容 |
+| --- | --- |
+| [窗口声明与生命周期](lifecycle.md) | `[Window]` / `[UIRes]`、缓存、生命周期钩子、Holder 事件、手动注册 |
+| [打开、关闭与查询](window.md) | `ShowUI` / `CloseUI`、参数、取消、查询、全屏遮挡 |
+| [路由与转场](router.md) | `Navigation` 前进/返回、路由结果、转场组件与自定义转场 |
+| [Widget 与 Tab](widget.md) | Widget 创建与开关、Tab、UI 事件自动解绑 |
+| [性能与缓存](performance.md) | 更新与缓存策略、避免分配、Profiler 观察 |
 
 ## 注意事项
 
-1. `WindowAttribute` 写在窗口逻辑类上；`UIResAttribute` 写在 Holder 类上。
-2. `OnInitialize` 只执行一次（缓存复用不再执行）；`OnUpdate` 需要 `[UIUpdate]`。
-3. `ShowUI` / `ShowUISync` 以逻辑打开完成（`IsOpen`）为完成点；开场动画是后台任务，需要时 `await AwaitTransition()`。
-4. 页面用导航 API，弹窗/Tips 用 `ShowUI/CloseUI`；关闭当前页会清空 history。
-5. `CurrentEntry` 与 `UserDatas` 都是只读视图，不要写入。
-6. 每层最多 200 个窗口；每个窗口的 Canvas 使用 `overrideSorting`，深度由服务排序。
-7. 转场默认跟随 unscaled time；自定源必须实现 `Snap`，否则强制关闭/回滚会停在半途。
-8. UI 的每帧更新与转场依赖 `AppServiceRoot` 的 `Tick`；测试或自建环境需要显式驱动。
-9. UI 模块依赖 `TimerComponent`（缓存计时、遮挡层）；启动顺序错误会初始化失败。
-10. 不要在 `OnOpen`/`OnClose` 里另起一套动画，会绕过 `skipTransition`、回滚与缓存前的关态钉死。
+1. `OnInitialize` 只在首次创建时执行一次；缓存复用只重新执行 `OnOpen`。
+2. 想收到 `OnUpdate`，在窗口/Widget 中重写 `OnUpdate` 即可，不需要额外标签。
+3. `ShowUI` 只传一个 `userData` 对象；多个字段请自己定义参数类。
+4. `CloseSelf` 返回 `UIViewTransition`，需要等关场动画时再 await。
+5. 页面导航使用 `GameApp.UI.Navigation`；`CloseUI` 从导航之外关闭当前页会清空 history。
+6. 每帧更新和转场由 `AppServiceRoot` 的 `Tick` 驱动；自建测试环境需要显式调用 `IServiceTickable.Tick`。

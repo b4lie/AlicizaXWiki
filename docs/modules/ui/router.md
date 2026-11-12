@@ -1,100 +1,148 @@
 # 路由与转场
 
-入口：`IUINavigationService router = GameApp.UI;`（`IUIService` 也直接暴露这些方法）。
-
-## 建立 root
+页面导航从 `GameApp.UI.Navigation` 取得：
 
 ```csharp
-await GameApp.UI.NavigateTo<UIHomeWindow>();          // 第一条 history
-GameApp.UI.ResetHistory();                            // 只清 history，不关 UI
-GameApp.UI.SyncFromCurrentUI(typeof(UIHomeWindow));   // 把当前已 Opened 的 UI 设为 root
+using System;
+using AlicizaX.UI.Runtime;
+
+IUINavigationService nav = GameApp.UI.Navigation;
 ```
 
-## 前进导航
+导航负责维护 history 和页面切换；实际打开/关闭窗口仍由 `IUIService` 完成。弹窗、Tips 不要走导航，继续使用 `ShowUI` / `CloseUI`。
+
+## 前进
 
 ```csharp
-UIRouteResult result = await GameApp.UI.NavigateTo<UIShopWindow>(shopId);
-if (!result.Success) { /* result.Status */ }
+UIRouteResult result = await GameApp.UI.Navigation.NavigateTo<ShopWindow>(shopArgs);
+
+if (!result)
+{
+    // result.Status: NotFound / OpenFailed / Cancelled
+    return;
+}
+
+await result.AwaitTransition(); // 需要等页面转场时
 ```
 
-规则：
+`NavigateTo` 在目标页面逻辑打开后返回，转场还在后台播放。`UIRouteResult` 可以隐式转 `bool`，也可以读 `Status`。
 
-- 每次成功导航写入一条 history；history 上限 64，超出返回 `RejectedLimit`。
-- **history 中同类型最多一条**：导航到已存在类型时按该条截断（回到该页并丢弃其上的页），不会产生重复条目。
-- 参数在入 history 时浅拷贝一份，之后以只读视图暴露；业务修改传入数组不会影响 history。
-- `Replace` 替换当前页（`keep = 当前页 index`），`ResetTo` 重建 history 只保留目标页。
-- 打开失败不改 history、不关闭当前页；`Back` 恢复的页面使用 history 中保存的参数。
-- 新导航会取消进行中且未提交的旧导航（旧调用返回 `Cancelled`）；`Back` 在打开过程中会直接取消打开并返回 `Ok`。
-
-## 返回
+常用导航：
 
 ```csharp
-await GameApp.UI.Back();                 // history.Count < 2 -> NotFound
-await GameApp.UI.BackToRoot();
-await GameApp.UI.BackTo<UIHomeWindow>();               // 未命中且 openIfMissing=true -> ResetTo
-await GameApp.UI.BackTo<UIHomeWindow>(openIfMissing: false);
-await GameApp.UI.CloseCurrent(force: false);           // 关闭当前页
+await GameApp.UI.Navigation.NavigateTo<ShopWindow>(shopArgs); // 压入新页面
+await GameApp.UI.Navigation.Replace<ShopWindow>(shopArgs);    // 替换栈顶
+await GameApp.UI.Navigation.ResetTo<HomeWindow>();            // 清空 history，只保留目标
+await GameApp.UI.Navigation.Back();                           // 返回上一页
+await GameApp.UI.Navigation.BackToRoot();                     // 回到第一条 history
+await GameApp.UI.Navigation.BackTo<HomeWindow>();             // 回到指定页面
+await GameApp.UI.Navigation.CloseCurrent();                   // 关闭当前页并结束 history
 ```
 
-`CloseCurrent` 规则：关闭当前页并清空 history。需要回到上一页时使用 `Back`。
+## history 规则
 
-## 状态
+- history 中同类型最多一条；导航到已存在类型时截断到该条，并用新参数刷新。
+- 同一时刻只保留一个页面打开；新页面逻辑打开后才关闭旧页面。
+- 新的导航会取代尚未提交的上一次导航，被取代的调用返回 `Cancelled`。
+- `Back` 在页面打开过程中会撤销那次打开，并按返回处理。
+- `UserData` 保存的是传入对象引用，不会自动复制；需要快照就在传入前自己复制。
+- `CloseUI`、`CloseSelf` 从导航之外关闭当前页时，history 会清空；页面返回请走 `Back`。
+- `ResetHistory` 只清 history，不关闭窗口；`SyncFromCurrentUI` 把已打开的窗口登记为唯一 history 条目。
+
+建立/清理 history：
 
 ```csharp
-bool canBack = GameApp.UI.CanBack;
-Type current = GameApp.UI.Current;
-UIRouteEntry entry = GameApp.UI.CurrentEntry;   // 内部只读实例，不做拷贝
-var firstArg = entry.Arguments[0];              // IReadOnlyList<object>
+await GameApp.UI.Navigation.ResetHistory();
+await GameApp.UI.Navigation.SyncFromCurrentUI(typeof(HomeWindow));
 ```
 
-`UIRouteResult.Status`：
+`SyncFromCurrentUI` 要求窗口已经是 `Opening/Opened`；否则返回 `NotFound`。
 
-| Status | 含义 |
-|---|---|
+## 返回与状态
+
+```csharp
+bool canBack = GameApp.UI.Navigation.CanBack;
+
+UIRouteEntry current = GameApp.UI.Navigation.CurrentEntry;
+if (current.IsValid)
+{
+    Type pageType = current.UIType;
+    object args = current.UserData;
+}
+```
+
+`UIRouteStatus`：
+
+| 状态 | 含义 |
+| --- | --- |
 | `Success` | 成功 |
-| `RejectedLimit` | history 已满 |
-| `NotFound` | 无目标/无 history |
-| `OpenFailed` | 开关窗失败 |
-| `Cancelled` | 被后续导航/关闭/关服取消 |
+| `NotFound` | 没有目标或没有 history |
+| `OpenFailed` | 窗口打开失败 |
+| `Cancelled` | 被后续导航或关闭取代 |
 
-> 导航 API 全部是异步事务；按钮回调里可以 `.Forget()`，关键流程请 `await` 并检查 `Status`。
+`BackTo<T>(openIfMissing: false)` 在 history 中找不到 T 时返回 `NotFound`；`openIfMissing: true` 会把 T 作为新页面打开。
 
 ## 转场
 
-转场由 Holder 驱动。一次播放只有一个所有者：
+转场由 Holder 上的 `IUITransition` 驱动。框架自带 `UIPresetTransition`，也可以自己实现。
+
+### 使用预设转场
+
+在 Holder 预制体根节点或子节点上添加 `UIPresetTransition` 组件。编辑器会自动把最近的 `UIPresetTransition` 绑定到 Holder 的 `Transition` 字段，不需要手动拖引用。
+
+常用配置：
+
+| 字段 | 说明 |
+| --- | --- |
+| `Open Preset` / `Close Preset` | 打开/关闭动画，例如 `Fade`、`Scale`、`FadeScale`、`SlideFromBottom`、`Toast` |
+| `Open Ease` / `Close Ease` | 缓动曲线 |
+| `Open Duration` / `Close Duration` | 动画时长 |
+| `Unscaled Time` | 默认开启，暂停游戏时动画继续 |
+| `Target Rect` / `Canvas Group` | 默认自动取 Holder 自身；为空时编辑器/运行时自动解析 |
+
+注意：
+
+- `Fade`、`FadeScale`、`Slide*`、`Toast` 带 alpha 效果，需要 `CanvasGroup`，适合 Widget Holder。
+- 窗口的显隐由 `Canvas.enabled` 控制，窗口根节点没有自动添加 `CanvasGroup`；窗口优先用 `Scale` 或自定义非 alpha 转场，不要依赖 alpha 预设。
+- `snap: true` 会直接落到终态，不播放动画。
+
+### 自定义转场
+
+实现 `IUITransition`：
 
 ```csharp
-public interface IUITransitionSource
-{
-    UniTask Play(bool open, CancellationToken cancellationToken);
-    void Snap(bool open);
-}
+using AlicizaX.UI.Runtime;
+using Cysharp.Threading.Tasks;
 
-// 可选：由 UI 服务逐帧推进，避免每帧调度 PlayerLoop
-public interface ITickTransitionSource : IUITransitionSource
+public sealed class MyTransition : IUITransition
 {
-    bool Begin(bool open);          // 建立起止状态；false = 0 时长、已应用终态
-    bool Advance(float deltaTime);  // true = 已到终态
+    public UniTask Open(bool snap)
+    {
+        // 从当前外观播放到打开终态；snap 为 true 时直接设置终态。
+        return UniTask.CompletedTask;
+    }
+
+    public UniTask Close(bool snap)
+    {
+        // 从当前外观播放到关闭终态。
+        return UniTask.CompletedTask;
+    }
 }
 ```
 
-- 转场源实现 `ITickTransitionSource` 时走 tick 路径：由 `UIService.Tick` 调用 `Advance`，完成后 Holder 直接通知所属视图，不分配等待对象。
-- 只实现 `IUITransitionSource` 时走异步 `Play` 路径，每次播放分配一个 CTS 和一个 UniTask runner。
-- 手动创建的 Holder（`UIHolderFactory`）没有所属视图，不会播放转场。
-- `UIPresetTransition` 同时实现两种接口；tick 路径使用 `useUnscaledTime` 选择时间源（默认 unscaled）。
-- `timeScale = 0` 且 `useUnscaledTime = false` 时，按缩放时间的转场会随游戏暂停而冻结（不会死循环）；这是明确的时间语义。
-- 取消时只取消，不补终态；终态由下一次完整 `Play` 或 `Snap` 负责。被取消的异步 `Play` 抛出的 `OperationCanceledException` 由 Holder 吞掉。
-- `skipTransition`、销毁子树、`RemoveWidget`、Router 关下层走 `Snap`。
-- 自定义：
+运行时替换 Holder 的转场：
 
 ```csharp
-protected override void OnInitialize()
-{
-    SetTransition(PlayMine, SnapMine);
-}
-
-private UniTask PlayMine(bool open, CancellationToken ct) { ... }
-private void SnapMine(bool open) { ... }
+baseui.SetTransition(new MyTransition());
+baseui.SetTransition(null); // 恢复预制体上序列化的默认转场
 ```
 
-`SetTransition(null)` 取消当前播放并回到 Inspector 上的组件源。播放中替换转场源时，当前打开或关闭阶段立即结束，不会重新播放。
+`UIPresetTransition` 已经实现 `IUITransition`；自定义转场可以只负责位置、缩放或透明度，不必关心窗口状态机。
+
+## 注意事项
+
+1. 页面用 `Navigation`，弹窗用 `ShowUI`；同一页面不要混用两条路径。
+2. `NavigateTo` 返回时逻辑页面已打开，但转场可能还没结束；需要动画完成再操作 UI 时 `await result.AwaitTransition()`。
+3. `UIRouteEntry.UserData` 是引用，不是快照；不要把之后会被修改的对象直接交给 history。
+4. 窗口的 alpha 转场不可靠，使用 `Scale` 或自定义非 alpha 转场。
+5. 关闭导航当前页会清空 history；需要“返回上一页”时使用 `Back`，不要直接 `CloseUI`。

@@ -130,11 +130,11 @@ nav:
   - UI 与表现:
       - UI 界面:
           - 概览: modules/ui/index.md
-          - 元数据与生命周期: modules/ui/lifecycle.md
-          - 打开与关闭: modules/ui/window.md
+          - 窗口声明与生命周期: modules/ui/lifecycle.md
+          - 打开、关闭与查询: modules/ui/window.md
           - 路由与转场: modules/ui/router.md
           - Widget 与 Tab: modules/ui/widget.md
-          - 性能预算: modules/ui/performance.md
+          - 性能与缓存: modules/ui/performance.md
       - Audio 音频: modules/audio/index.md
   - Localization 本地化:
       - 概览: modules/localization/index.md

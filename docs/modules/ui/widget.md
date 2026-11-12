@@ -1,52 +1,143 @@
 # Widget 与 Tab
 
-```csharp
-protected T CreateWidgetSync<T>(Transform parent, bool visible = true) where T : UIWidget;
-protected T CreateWidgetSync<T>(UIHolderObjectBase holder, bool destroyHolderOnDispose = true, bool visible = true) where T : UIWidget;
-protected UniTask<T> CreateWidgetAsync<T>(Transform parent, bool visible = true, CancellationToken cancellationToken = default);
-protected UniTask<UIWidget> CreateWidgetAsync(string typeName, Transform parent, bool visible = true, CancellationToken cancellationToken = default);
-public UniTask RemoveWidget(UIWidget widget);
+Widget 是挂在窗口内部的子视图，和窗口共用生命周期，但可以单独打开、关闭和销毁。需要独立层级、缓存或页面历史的界面使用 `UIWindow`；窗口内部的局部内容用 `UIWidget`。
 
-widget.Open(params object[] userDatas);
-widget.Close();
-await widget.Destroy();
-await widget.AwaitTransition();
+## 创建 Widget
+
+```csharp
+using AlicizaX.UI.Runtime;
+
+[Window(UILayer.UI, UICacheTime.Forever)]
+public sealed class HomeWindow : UIWindow<ui_HomeWindow>
+{
+    private UITestAWidget _widget;
+
+    protected override void OnInitialize()
+    {
+        _widget = CreateWidgetSync<UITestAWidget>(
+            baseui.RectTransform,
+            visible: false);
+    }
+
+    private void OnRoleClick()
+    {
+        _widget.Open();
+    }
+}
+```
+
+异步创建：
+
+```csharp
+using Cysharp.Threading.Tasks;
+
+private async UniTaskVoid LoadWidgetAsync()
+{
+    UITestAWidget widget = await CreateWidgetAsync<UITestAWidget>(
+        baseui.Content,
+        visible: true,
+        DestroyCancellationToken);
+
+    if (widget != null)
+    {
+        widget.Open();
+    }
+}
+```
+
+`CreateWidgetSync` / `CreateWidgetAsync`：
+
+- 父节点必须是当前视图 Holder 的子树，并且节点处于激活状态，否则创建失败并输出 Error。
+- `visible: true` 时创建后直接打开；`false` 时只创建并保持关闭。
+- 异步创建可以传 `DestroyCancellationToken`，窗口销毁时取消加载。
+- 用已有 Holder 创建：`CreateWidgetSync<T>(holder)`；Holder 节点会随 Widget 一起销毁。
+
+## 打开、关闭和销毁
+
+```csharp
+_widget.Open();                  // 打开；已打开时刷新参数
+_widget.Open(userData);          // 传一个参数对象
+_widget.Close();                 // 关闭，保留实例
+await _widget.Destroy().AwaitTransition(); // 关闭后销毁
+await _widget.AwaitTransition(); // 等当前开关转场结束
 ```
 
 语义：
 
-- `CreateWidget*`：资源 + Init +（`visible` 时）逻辑 `OnOpen`；开场转场后台推进。
-- Widget 必须属于父窗口 Holder 的 Transform 子树，否则创建失败并报 Error。
-- 每个 Widget 自己持有加载取消源：父窗口销毁会取消所有子创建；Widget 自身销毁也会立即取消自己的加载。
-- `Open`：已 `Opened` 只刷新参数；`Opening` 返回成功；`Closing` 返回 false（需要重开请在关闭完成后再调）。
-- `Close`：`Initialized`（从未打开）时是 no-op；其余状态走完整关闭流程。
-- 可见性：`IsVisible = Visible && Parent.IsVisible`；父级不可见时子 Widget 逻辑状态不变，只暂停事件/更新。
+- `Open`：`Opening` / `Opened` 时只刷新参数；`Closed` 时重新打开；`Closing` 时从当前外观反向打开。
+- `Close`：从未打开过的 Widget 是 no-op；其余状态走完整关闭流程。
+- `Destroy`：播放关闭转场后销毁；已经 `Closed` 时立即销毁。
+- 父窗口隐藏或关闭时，Widget 的逻辑状态不变，但更新和事件会暂停；父窗口重新启用后恢复。
 
 ## Tab 窗口
 
+`UITabWindow<T>` 适合设置页、商店分类等页签结构：
+
 ```csharp
-public abstract class UITabWindow<T> : UIWindow<T> where T : UIHolderObjectBase
+using AlicizaX.UI.Runtime;
+using Cysharp.Threading.Tasks;
+
+public sealed class SettingsWindow : UITabWindow<ui_SettingsWindow>
 {
-    protected void InitTabVirtuallyView<TTab>(Transform parent = null) where TTab : UIWidget;
-    public UniTask<UIWidget> SwitchTab(int index, params object[] userDatas);
+    protected override void OnInitialize()
+    {
+        InitTabVirtuallyView<AudioTab>(baseui.TabRoot);
+        InitTabVirtuallyView<VideoTab>(baseui.TabRoot);
+        InitTabVirtuallyView<ControlTab>(baseui.TabRoot);
+    }
+
+    private void SelectAudio()
+    {
+        SwitchTab(0).Forget();
+    }
 }
 ```
 
-- Tab 首次选中时异步创建，之后复用实例。
-- 切换是 latest wins：旧请求返回 `null`，旧 Tab 关闭完成后才打开新 Tab。
-- Tab 加载中窗口被关闭/销毁时请求会以 `null` 结束，迟到资源被销毁。
+```csharp
+public UniTask<UIWidget> SwitchTab(int index, object userData = null);
+```
+
+- 页签在第一次切换时才异步创建，之后复用实例。
+- 已加载页签之间切换同步完成；未加载页签异步加载。
+- 切换是 latest wins：被新切换取代的调用返回 `null`。
+- `ActiveTab` 返回当前页签，未选中时为 `null`。
+- 页签的父节点不传时默认使用窗口 Holder 根节点。
 
 ## UI 事件自动解绑
 
+用 `EventProxy` 订阅事件，视图不可见时自动暂停，销毁时自动退订：
+
 ```csharp
-protected override void OnRegisterEvent(EventListenerProxy proxy)
+using AlicizaX;
+using AlicizaX.UI.Runtime;
+
+public readonly struct ShopRefreshedEvent : IEmptyEventArgs
 {
-    proxy.AddUIEvent<LocalizationChangeEvent>(OnLanguageChanged);
 }
 
-private void OnLanguageChanged(in LocalizationChangeEvent evt) => RefreshText();
+public sealed class ShopWindow : UIWindow<ui_ShopWindow>
+{
+    protected override void OnInitialize()
+    {
+        EventProxy.AddUIEvent<ShopRefreshedEvent>(OnShopRefreshed);
+    }
+
+    private void OnShopRefreshed()
+    {
+        Refresh();
+    }
+}
 ```
 
-- `OnRegisterEvent` 在每个视图的生命周期内只调用一次，发生在首次 `Effective` 时。之后不可见或关闭只暂停订阅，重新 `Effective` 时恢复，不再调用它。依赖每次打开的逻辑写在 `OnOpen` 或 `OnRefresh`。
-- 销毁时释放订阅并把代理归还 `MemoryPool`。
-- 在 `OnRegisterEvent` 内销毁自身是允许的：事件代理会延迟到回调返回后释放，不会泄漏句柄。
+- `TEvent` 必须是 `struct`，实现 `IEmptyEventArgs`（无参数）或 `IPayloadEventArgs`（有参数）。
+- 无参数事件使用 `AddUIEvent<T>(Action)`；有参数事件使用 `AddUIEvent<T>(InEventHandler<T>)`。
+- 在 `OnInitialize` 里注册一次即可；不要每次 `OnOpen` 重复添加。
+- `EventProxy` 由视图自动管理，销毁时归还内存池并释放全部订阅。
+
+## 注意事项
+
+1. Widget 不是窗口：没有 `[Window]` 层级，也不进入导航 history；层级由父窗口 Holder 决定。
+2. Widget 必须创建在父视图 Holder 的激活子树内，不能在窗口还没绑定时创建。
+3. 需要保留实例就调用 `Close()`；想彻底移除调用 `Destroy()`，不要只把节点 `SetActive(false)`。
+4. 父视图隐藏时，Widget 的 `OnUpdate` 和事件会暂停，但 Widget 状态不会自动变成 `Closed`。
+5. Tab 的 `SwitchTab` 只接收一个 `userData`；多个字段请自己定义参数类。

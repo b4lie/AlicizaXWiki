@@ -1,54 +1,184 @@
-# 元数据与生命周期
+# 窗口声明与生命周期
 
-窗口逻辑类使用 `WindowAttribute` 描述显示层级和缓存时间：
+窗口逻辑类继承 `UIWindow<Holder>`，用 `[Window]` 声明层级和缓存时间；Holder 用 `[UIRes]` 声明资源位置。
+
+## 声明窗口
 
 ```csharp
-[Window(UILayer.UI, 30)]
+using AlicizaX.UI.Runtime;
+
+[Window(UILayer.UI, UICacheTime.Forever)]
 public sealed class HomeWindow : UIWindow<ui_HomeWindow>
 {
     protected override void OnInitialize()
     {
-        baseui.BtnClose.onClick.AddListener(() => CloseSelf().Forget());
+        baseui.BtnClose.onClick.AddListener(() => CloseSelf());
     }
 }
 ```
 
+`WindowAttribute`：
+
+| 参数 | 说明 |
+| --- | --- |
+| `windowLayer` | `UILayer` 之一 |
+| `cacheTime` | `UICacheTime.None`（0）关闭即销毁；`UICacheTime.Forever`（-1）常驻缓存；正数按秒缓存 |
+
+缓存从**关场转场结束**后开始计时。缓存复用时不会再次执行 `OnInitialize`，只会重新执行 `OnOpen`，必要时执行 `OnRefresh`。
+
+## 声明 Holder 资源
+
+Holder 通常由生成器生成，并带 `[UIRes]`：
+
 ```csharp
-public WindowAttribute(UILayer windowLayer, int cacheTime = 0);
-```
-
-- `windowLayer`：窗口层级，不能是 `UILayer.All`。
-- `cacheTime`：`-1` 永久缓存，`0` 不缓存，`>= 1` 按秒缓存（关场动画结束后开始计时）。
-
-需要每帧更新时添加 `[UIUpdate]`：
-
-```csharp
-[UIUpdate]
-[Window(UILayer.UI)]
-public sealed class BattleHudWindow : UIWindow<ui_BattleHudWindow>
+[UIRes(ui_HomeWindow.ResTag, EUIResLoadType.AssetBundle)]
+public partial class ui_HomeWindow : UIHolderObjectBase
 {
-    protected override void OnUpdate(float deltaTime) => RefreshHpBar(deltaTime);
 }
 ```
 
-- 只有带 `[UIUpdate]` 的窗口/Widget 才会收到 `OnUpdate`，每帧成本只与这些视图的数量有关。视图必须 `Effective`，自身和所在窗口都必须处于 `Opened`。
-- 父节点先于子节点更新；同级 Widget 按进入更新链表的顺序更新，不是创建顺序。不要依赖同级之间的顺序。
-- 本帧新进入更新或转场链表的视图从下一帧开始执行；本帧移除的视图不再执行。
-- `deltaTime` 来自 `AppServiceRoot.Update`（`Time.deltaTime`）。
+- `ResLocation`：资源地址。
+- `EUIResLoadType`：`Resources` 或 `AssetBundle`。
+- `[UIRes]` 写在 Holder 类上，不写在 `HomeWindow` 逻辑类上。
 
-Holder 的资源位置使用 `[UIRes]`（写在 Holder 类上，不写在窗口逻辑类上）：
+## 生命周期钩子
 
 ```csharp
-[UIRes(ui_LoginWindow.ResTag, EUIResLoadType.AssetBundle)]
-public class ui_LoginWindow : UIHolderObjectBase { ... }
+[Window(UILayer.UI, UICacheTime.Forever)]
+public sealed class ShopWindow : UIWindow<ui_ShopWindow>
+{
+    protected override void OnInitialize() { /* 只执行一次 */ }
+    protected override void OnOpen() { /* 每次打开 */ }
+    protected override void OnRefresh() { /* 已打开时再次 Show */ }
+    protected override void OnUpdate(float deltaTime) { /* 每帧，仅重写时启用 */ }
+    protected override void OnClose() { /* 逻辑关闭 */ }
+    protected override void OnDestroy() { /* 实例销毁 */ }
+}
 ```
 
-注册入口：
+| 钩子 | 状态 | 执行时机 |
+| --- | --- | --- |
+| `OnInitialize` | `Closed` | Holder 绑定后、首次打开前，只执行一次 |
+| `OnOpen` | `Opening` | 逻辑打开，开场转场尚未开始 |
+| `OnRefresh` | `Opening` / `Opened` | 已打开的窗口再次 `Show`，参数已更新 |
+| `OnUpdate` | `Opening` / `Opened` | 重写了 `OnUpdate` 且父级启用时，每帧调用 |
+| `OnClose` | `Closing` | 逻辑关闭，`IsOpen` 已为 `false`，关闭转场尚未开始 |
+| `OnDestroy` | `Destroyed` | 实例销毁前，只执行一次 |
 
-- 启动期集中注册：`UIMetaRegistry.Register(uiType, holderType, layer, cacheTime, needUpdate, create)` 与 `UIResRegistry.Register(holderType, location, loadType)`。`create` 可省略，省略时用反射创建实例。
-- 生成器（`Plugins/SourceGenerators/UI`）在每个程序集生成 `UIGeneratedRegistry.RegisterAll()`，包含 Holder 资源、窗口元数据和实例工厂。生成器修改后要运行 `Build.ps1` 更新 DLL。
-- `RegisterAll` 默认由 `RuntimeInitializeOnLoadMethod` 调用。特殊小游戏平台不会调用它时，未注册类型走反射兜底（首次打开打 `UI not pre-registered` Warning）；需要关注性能时，在所属程序集入口手动调用 `AlicizaX.UI.Runtime.UIGeneratedRegistry.RegisterAll()`。
-- 生成器诊断：`UI004`（缺少可访问的无参构造函数）、`UI005`（`[Window]` 使用 `UILayer.All`）是编译错误；`UI003`（生成代码无法访问的类型）是 Warning，该类型走反射。
+补充：
+
+- `OnUpdate` 不需要任何标签；只要重写了 `OnUpdate`，该视图就会被加入更新列表。父窗口关闭、隐藏或销毁时，Widget 的更新和事件会暂停。
+- 钩子内调用的打开、关闭、销毁会立即改变状态，原流程不会继续。
+- 业务钩子抛出的异常会被捕获并记录，生命周期继续推进。
+
+## 读取打开参数
+
+`ShowUI` 只传一个 `userData` 对象。需要多个字段时定义一个参数类：
+
+```csharp
+public sealed class ShopOpenArgs
+{
+    public int ShopId;
+    public string From;
+}
+
+[Window(UILayer.Popup, UICacheTime.Forever)]
+public sealed class ShopWindow : UIWindow<ui_ShopWindow>
+{
+    protected override void OnOpen()
+    {
+        if (UserData is ShopOpenArgs args)
+        {
+            Refresh(args.ShopId);
+        }
+    }
+}
+```
+
+打开时传入：
+
+```csharp
+await GameApp.UI.ShowUI<ShopWindow>(new ShopOpenArgs { ShopId = 1001, From = "bag" });
+```
+
+`UserData` 在视图销毁或进入缓存时清空。已打开时再次 `Show` 传 `null` 会保留原参数。
+
+## 异步与销毁取消
+
+视图销毁时，`DestroyCancellationToken` 会取消：
+
+```csharp
+using System.Threading;
+using Cysharp.Threading.Tasks;
+
+protected override void OnOpen()
+{
+    LoadAsync(DestroyCancellationToken).Forget();
+}
+
+private async UniTaskVoid LoadAsync(CancellationToken token)
+{
+    await SomeAsync(token);
+}
+```
+
+窗口或 Widget 销毁、缓存淘汰时，这个令牌会取消；业务异步操作应把它传给 `UniTask`。
+
+## Holder 事件
+
+Holder 暴露四个事件：
+
+```csharp
+baseui.OnInitEvent += OnHolderInit;
+baseui.OnShowEvent += OnHolderShow;
+baseui.OnCloseEvent += OnHolderClose;
+baseui.OnDestroyEvent += OnHolderDestroy;
+```
+
+- 事件在对应生命周期钩子之前触发，顺序固定。
+- 单个订阅者抛异常只记录日志，不影响其他订阅者。
+- Holder 被外部销毁时，会通知所属视图按销毁流程处理。
+
+事件适合外部模块感知窗口显示/隐藏；业务自己的逻辑优先写在 `OnOpen` / `OnClose`。
+
+## 手动注册
+
+正常使用生成器时不需要手动注册。动态类型或生成器覆盖不到的类型可以手动注册：
+
+```csharp
+using AlicizaX.UI.Runtime;
+
+UIMetaRegistry.RegisterWindow<MyWindow, ui_MyWindow>(
+    () => new MyWindow(),
+    UILayer.UI,
+    UICacheTime.Forever,
+    hasUpdate: true);
+
+UIMetaRegistry.RegisterWidget<MyWidget, ui_MyWidget>(
+    () => new MyWidget(),
+    hasUpdate: false);
+
+UIResRegistry.Register(typeof(ui_MyWindow), "UI/MyWindow", EUIResLoadType.AssetBundle);
+UIResRegistry.Register(typeof(ui_MyWidget), "UI/MyWidget", EUIResLoadType.AssetBundle);
+```
+
+- `hasUpdate` 要和是否重写 `OnUpdate` 保持一致；生成器会自动判断。
+- 未注册类型首次使用会走反射兜底并输出 `UI not pre-registered` Warning；反射要求 public 无参构造。
+- `RegisterWindow` 的 Holder 类型由泛型约束保证，填写错误的类型关系会编译失败。
+
+## 手动创建 Holder
+
+少数场景需要自己创建 Holder（例如临时 Tips 多实例）：
+
+```csharp
+ui_UILogicTestAlert holder =
+    await UIHolderFactory.CreateUIHolderAsync<ui_UILogicTestAlert>(parent);
+
+ui_UILogicTestAlert sync =
+    UIHolderFactory.CreateUIHolderSync<ui_UILogicTestAlert>(parent);
+```
+
+手动 Holder 没有窗口 owner，不会自动播放转场，也不会自动解绑事件；生命周期由调用方维护。资源加载失败或 prefab 缺少 Holder 时返回 `null`，已实例化的节点会被销毁。
 
 ## UISetting 与生成流程
 
@@ -72,51 +202,12 @@ public class ui_LoginWindow : UIHolderObjectBase { ... }
 
 *右键菜单里的 `UI生成 / 绑定` 与 `UI生成 / 仅复制属性` 两个入口。*
 
-## 生命周期
+生成的 Holder 和窗口关系会由生成注册表在启动时自动注册，不需要在每个窗口里写注册代码。
 
-初始化生命周期内联在 `UIBase` 中，通过虚方法重写：
+## 注意事项
 
-```csharp
-protected virtual void OnInitialize();
-protected virtual void OnOpen();
-protected virtual void OnRefresh();
-protected virtual void OnClose();
-protected virtual void OnDestroy();
-protected virtual void OnUpdate(float deltaTime);
-protected virtual void OnRegisterEvent(EventListenerProxy proxy);
-```
-
-语义：
-
-- `OnInitialize`：资源绑定后、首次打开前执行一次；缓存复用不会再次执行。
-- `OnOpen`：逻辑打开。钩子执行期间 `IsOpen == false`，返回后才变为 true；开场动画尚未开始。
-- `OnRefresh`：已 `Opened` 后再次 `Show` 传参时调用，调用前参数已更新。
-- `OnClose`：逻辑关闭（`IsOpen` 已为 false），关场动画尚未完成。
-- `OnDestroy`：实例销毁前调用一次。
-- `OnUpdate`：仅 `[UIUpdate]` + `Opened` + `Effective` 时每帧调用。
-- 业务钩子抛异常会被捕获并记录，生命周期继续推进。
-
-## Holder 生命周期事件
-
-Holder 暴露 6 个事件：
-
-```csharp
-OnWindowInitEvent / OnWindowBeforeShowEvent / OnWindowAfterShowEvent
-OnWindowBeforeClosedEvent / OnWindowAfterClosedEvent / OnWindowDestroyEvent
-```
-
-- 顺序与调用点固定；单个订阅者抛异常只记录日志，不影响其余订阅者。
-- 增删订阅时复制回调数组，invoke 路径 0 B。回调内增删订阅从下一次触发开始生效。
-- 输入系统等外部模块通过它感知窗口显示/隐藏；不要在回调里做重活。
-
-## 手动创建 Holder
-
-少数场景可手动创建 Holder，例如临时 Tips 多实例，生命周期需要业务自行维护：
-
-```csharp
-ui_UILogicTestAlert holder = await UIHolderFactory.CreateUIHolderAsync<ui_UILogicTestAlert>(parent);
-ui_UILogicTestAlert sync = UIHolderFactory.CreateUIHolderSync<ui_UILogicTestAlert>(parent);
-```
-
-- 资源加载失败或预制体缺 Holder 时返回 `null`，已实例化的对象会被销毁。
-- 手动 Holder 没有窗口 owner，不会自动解绑事件或驱动转场。
+1. `[Window]` 只写在窗口逻辑类上；`[UIRes]` 只写在 Holder 类上。
+2. 缓存窗口复用时不会重新执行 `OnInitialize`；把一次性初始化放在 `OnInitialize`，把每次打开的状态放在 `OnOpen`。
+3. `OnClose` 执行时关闭转场还没开始；不要在 `OnClose` 里再起一套动画。
+4. 手动 Holder 不会自动解绑事件，也不播放转场，业务要自己管理生命周期。
+5. 生成器修改后需要重新生成 Holder 和注册表；生成器诊断中的类型错误要先修复，避免运行时走反射兜底。
