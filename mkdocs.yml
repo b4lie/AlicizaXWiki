@@ -113,29 +113,26 @@ extra_css:
 
 nav:
   - 快速开始: quickstart.md
-  - 核心服务:
-      - Service 基础服务: modules/service/index.md
-      - Timer 计时器: modules/timer/index.md
-      - Event 事件: modules/event/index.md
-      - Procedure 流程: modules/procedure/index.md
-  - 资源与对象:
-      - Resources 资源:
-          - 概览: modules/resource/index.md
-          - 加载与绑定: modules/resource/loading.md
-          - 资源包与下载: modules/resource/packages.md
-          - 回收与调试: modules/resource/reclaim.md
-      - Scene 场景: modules/scene/index.md
-      - GameObjectPool 实例池: modules/gameobjectpool/index.md
-      - MemoryPool 内存池: modules/memorypool/index.md
-  - UI 与表现:
-      - UI 界面:
-          - 概览: modules/ui/index.md
-          - 窗口声明与生命周期: modules/ui/lifecycle.md
-          - 打开、关闭与查询: modules/ui/window.md
-          - 路由与转场: modules/ui/router.md
-          - Widget 与 Tab: modules/ui/widget.md
-          - 性能与缓存: modules/ui/performance.md
-      - Audio 音频: modules/audio/index.md
+  - Service 基础服务: modules/service/index.md
+  - Timer 计时器: modules/timer/index.md
+  - Event 事件: modules/event/index.md
+  - Procedure 流程: modules/procedure/index.md
+  - Resources 资源:
+      - 概览: modules/resource/index.md
+      - 加载与绑定: modules/resource/loading.md
+      - 资源包与下载: modules/resource/packages.md
+      - 回收与调试: modules/resource/reclaim.md
+  - Scene 场景: modules/scene/index.md
+  - GameObjectPool 实例池: modules/gameobjectpool/index.md
+  - MemoryPool 内存池: modules/memorypool/index.md
+  - UI 界面:
+      - 概览: modules/ui/index.md
+      - 窗口声明与生命周期: modules/ui/lifecycle.md
+      - 打开、关闭与查询: modules/ui/window.md
+      - 路由与转场: modules/ui/router.md
+      - Widget 与 Tab: modules/ui/widget.md
+      - 性能与缓存: modules/ui/performance.md
+  - Audio 音频: modules/audio/index.md
   - Localization 本地化:
       - 概览: modules/localization/index.md
       - 配置与词库生成: modules/localization/config.md

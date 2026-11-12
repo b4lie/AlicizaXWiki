@@ -54,11 +54,11 @@ hide:
 
     [:octicons-arrow-right-24: Resources](modules/resource/index.md)
 
--   :material-window-restore:{ .lg .middle } **UI 与表现**
+-   :material-window-restore:{ .lg .middle } **UI 界面**
 
     ---
 
-    窗口栈与层级、UIRouter、Widget / Tab、音频与本地化。
+    窗口栈与层级、缓存与转场、Widget / Tab、页面导航。
 
     [:octicons-arrow-right-24: UI](modules/ui/index.md)
 
