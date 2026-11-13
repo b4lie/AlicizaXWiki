@@ -16,7 +16,10 @@ using AlicizaX.Input;
 using UnityEngine;
 
 // HotfixEntry / 启动流程中，输入层初始化之后。
-UXInput.Feedback.Profile = Resources.Load<InputFeedbackProfile>("UX/InputFeedbackProfile");
+if (UXInput.Feedback != null)
+{
+    UXInput.Feedback.Profile = Resources.Load<InputFeedbackProfile>("UX/InputFeedbackProfile");
+}
 ```
 
 `UXInput.Feedback` 由 `InputService` 创建；输入层未初始化时为 `null`。输入层重建后需要重新设置主题。
