@@ -1,22 +1,17 @@
 # UXButton
 
-`UXButton` 继承 `UXSelectable`，用法接近 Unity `Button`，仍然通过 `onClick` 注册点击事件。额外支持：
-
-- 向 UI 音效模块上报 Pointer / Focus / Press，本身不持有 clip。
-- 子节点随按钮状态同步颜色或图片。
-- Input System 导航选中通知。
+`UXButton` 继承 `UXSelectable`，用法接近 Unity `Button`，通过 `onClick` 注册点击事件，同时支持子节点状态过渡和外部视觉状态。它不负责音效；交互音效由 input 包的 `InputFeedbackObserver` 处理。
 
 源码位置：
 
-- `Client/Packages/com.alicizax.unity.ui.extension/Runtime/UXComponent`
+- `Client/Packages/com.alicizax.unity.ui.extension/Runtime/UXComponent/Button/UXButton.cs`
+- `Client/Packages/com.alicizax.unity.ui.extension/Runtime/UXComponent/Selectable/UXSelectable.cs`
 
 ## 基础用法
 
 ```csharp
-using AlicizaX;
 using AlicizaX.UI.Runtime;
 using Game.UI;
-using UnityEngine.UI;
 
 [Window(UILayer.UI)]
 public sealed class LoginWindow : UIWindow<ui_LoginWindow>
@@ -24,132 +19,92 @@ public sealed class LoginWindow : UIWindow<ui_LoginWindow>
     protected override void OnInitialize()
     {
         baseui.BtnLogin.onClick.AddListener(OnLoginClick);
-        baseui.BtnClose.onClick.AddListener(CloseSelf);
+        baseui.BtnClose.onClick.AddListener(() => CloseSelf());
     }
 
     private void OnLoginClick()
     {
-        // 执行登录逻辑。
+        // 登录逻辑。
     }
 }
 ```
 
-临时禁用按钮：
+启用/禁用按钮：
 
 ```csharp
 baseui.BtnConfirm.interactable = CanDeleteItem(_targetId);
 ```
 
-确认弹窗示例：
+点击和 Submit 都会触发 `onClick`。按钮不可交互或节点未激活时不会触发。
+
+## 子节点状态
+
+`UXButton` 继承 `UXSelectable` 的 `Child Transitions`。适合按钮内有多层图标、文字和背景的情况：
+
+```text
+BtnBag (UXButton, Transition = ColorTint)
+├── Bg    (Image, 根 Target Graphic)
+├── Icon  (Image, Child Transitions)
+└── Label (TextMeshProUGUI, Child Transitions)
+```
+
+每个子项单独配置过渡类型：
+
+- `Transition = ColorTint`：配置 `Colors` 的各状态颜色。
+- `Transition = SpriteSwap`：配置 `Sprite State` 的各状态图片。
+
+子项之间可以混用颜色和图片过渡；根节点自己的 `Target Graphic` 仍由根控件 `Transition` 控制。
+
+## 外部视觉状态
+
+按钮不是 EventSystem 当前选中对象时，也可以由业务驱动高亮或按下：
 
 ```csharp
-using AlicizaX.UI.Runtime;
-using Game.UI;
+using UnityEngine.UI;
 
-[Window(UILayer.Popup)]
-public sealed class DeleteConfirmWindow : UIWindow<ui_DeleteConfirmWindow>
+public void SetHot(UXButton button, bool hot)
 {
-    private int _targetId;
-
-    public void SetTarget(int targetId)
+    if (hot)
     {
-        _targetId = targetId;
+        button.SetExternalState(UXSelectionState.Highlighted);
     }
-
-    protected override void OnInitialize()
+    else
     {
-        baseui.BtnConfirm.onClick.AddListener(OnConfirmClick);
-        baseui.BtnCancel.onClick.AddListener(CloseSelf);
-    }
-
-    private void OnConfirmClick()
-    {
-        GameApp.Inventory.DeleteItem(_targetId);
-        CloseSelf();
+        button.ClearExternalState();
     }
 }
 ```
 
-## 音效
+API：
 
-`UXButton` 不再序列化 hover / click clip，也不再注入 `IUXAudioHelper`。
-
-- 指针进入 / 离开、非指针选中 / 取消选中由 `UXSelectable` 上报。
-- 左键点击、`OnSubmit`、`PlayClickFeedback` 上报 `Press`。
-
-主题 clip 配在 `UXUiAudioProfile`，由应用加载后调用 `UXUiAudioRouter.Bind(profile)`。单个按钮要换音、只要点击音或完全静音，挂 `UXUiAudioOverride`。详见 [UXUiAudio](uxui-audio.md)。
-
-## Inspector 配置
-
-| 配置 | 说明 |
+| API | 作用 |
 | --- | --- |
-| `Transition` | 沿用 `Selectable` 的状态过渡，通常用 `ColorTint` 或 `SpriteSwap` |
-| `Navigation` | 沿用 UGUI 导航配置，可与 `UXNavigationScope` 配合 |
-| `Child Transitions` | 继承自 `UXSelectable`，让图标、文本等子节点跟随状态变化 |
+| `SetExternalState(UXSelectionState state, bool instant = false)` | 强制视觉状态，覆盖 Selectable 推导状态 |
+| `ClearExternalState(bool instant = false)` | 清除外部状态，恢复推导状态 |
+| `PulseExternalState(UXSelectionState pulseState, UXSelectionState restoreState, float duration = -1f)` | 播放一次按下/高亮脉冲，结束后恢复 |
+| `PlayClickPulse()` | 只播放点击视觉脉冲，不触发 `onClick` |
+
+`UXSelectionState`：`Normal`、`Highlighted`、`Pressed`、`Selected`、`Disabled`。
+
+外部状态激活时，左键点击不会触发 `onClick`，点击业务由驱动外部状态的逻辑处理；`OnSubmit` 仍会正常提交。列表项等需要“外部焦点视觉 + 自己处理点击”的场景应使用 `InteractiveViewHolder`，不要直接给 `UXButton` 设置外部状态后再依赖它的 `onClick`。
+
+## 导航行为
+
+`UXButton` 沿用 UGUI `Navigation`。当 `Navigation.Mode` 是 `Explicit` 且显式目标不可交互时，方向查找会返回 `null`，避免焦点跳到禁用按钮；`Horizontal` / `Vertical` / `Automatic` 仍按 UGUI 规则查找。
+
+需要手柄/键盘焦点管理时，给父窗口挂 `NavigationScope`，见 [NavigationScope](navigation.md)。
 
 ## 与 Unity Button 的差异
 
 1. 只响应左键点击，右键不会触发 `onClick`。
-2. `OnSubmit` 会触发 `onClick`，所以键盘、手柄和 `HotkeyComponent` 都可以复用同一套按钮逻辑。
-3. `onClick` 的类型仍然是 `Button.ButtonClickedEvent`，旧代码里 `baseui.BtnConfirm.onClick.AddListener(...)` 的写法可以保留。
-4. 按钮禁用或节点未激活时，点击和 Submit 不会上报音效或触发业务回调。
-5. 音效优先使用控件 Override，再使用全局 Profile；两者都没有时静默跳过。
-
-## UXSelectable 子节点状态
-
-`UXSelectable` 继承 `Selectable`，并增加子节点过渡列表。适合一个按钮包含图标、文本、背景多层视觉时统一处理状态。
-
-Inspector 配置：
-
-| 配置 | 说明 |
-| --- | --- |
-| `Transition` | 沿用 UGUI 的 `ColorTint` 或 `SpriteSwap` |
-| `Child Transitions` | 需要跟随按钮状态变化的子 `Graphic` |
-| `TransitionData.colors` | 子节点各状态颜色 |
-| `TransitionData.spriteState` | 子节点各状态图片 |
-
-带图标和文字的页签按钮结构：
-
-```text
-BtnBag (UXButton)
-├── Bg      (Image，作为按钮根节点 Target Graphic 或普通背景)
-├── Icon    (Image，加入 Child Transitions)
-└── Label   (TextMeshProUGUI，加入 Child Transitions)
-```
-
-推荐配置：
-
-| 节点 | 配置 |
-| --- | --- |
-| `BtnBag` | `Transition = ColorTint`，根背景使用按钮自己的 `Colors` |
-| `Icon` | 在 `Child Transitions` 里配置普通、悬停、按下、选中、禁用颜色 |
-| `Label` | 在 `Child Transitions` 里配置同一套文本颜色 |
-
-业务代码只需要处理点击：
-
-```csharp
-protected override void OnInitialize()
-{
-    baseui.BtnBag.onClick.AddListener(() => SwitchTab(0));
-    baseui.BtnEquip.onClick.AddListener(() => SwitchTab(1));
-}
-```
-
-子节点过渡类型跟随根节点 `UXSelectable.transition`，不能在同一控件内混用"根节点颜色过渡、子节点图片过渡"。需要混用时，建议拆成两个控件。
-
-导航行为增强：当 `Navigation.Mode` 是 `Explicit` 时，如果显式配置的目标不可交互，`FindSelectableOnLeft/Right/Up/Down` 会返回 `null`，避免焦点跳到禁用按钮上。
-
-## API 速查
-
-| API | 说明 |
-| --- | --- |
-| `UXButton.onClick` | 按钮点击事件，类型为 `Button.ButtonClickedEvent` |
-| `UXSelectable.navigation` | 配置方向导航 |
-| `UXSelectable.interactable` | 启用/禁用按钮 |
-| `PlayClickFeedback()` | 上报 `Press` 并做按下视觉反馈 |
+2. `OnSubmit` 会先播放点击脉冲，再触发 `onClick`，键盘/手柄/热键可以复用同一套业务。
+3. `onClick` 类型仍是 `Button.ButtonClickedEvent`，`AddListener` / `RemoveListener` 写法不变。
+4. 按钮禁用或节点未激活时，点击和 Submit 都不触发。
+5. 没有内置音效字段；需要 hover/click 音时加 `InputFeedbackObserver`，见 [Input Feedback](input-feedback.md)。
 
 ## 注意事项
 
-1. `UXButton` 不继承 Unity `Button`，但保留了 `Button.ButtonClickedEvent` 类型的 `onClick`，业务调用方式基本一致。
-2. `UXSelectable` 的子节点状态使用当前控件的 `transition` 类型决定是颜色还是图片切换，同一控件内不要混用两种过渡类型。
-3. 不要在按钮上再挂 clip 字段。主题进 Profile，特例进 `UXUiAudioOverride`。
+1. 不要把点击逻辑写在 `OnPointerClick` 里再调用 `onClick`，会重复触发。
+2. `SetExternalState` 会覆盖 Selectable 状态，清除后再回到指针/选中推导状态。
+3. 子节点过渡只应包含需要跟随状态的 `Graphic`，不要包含独立动画的装饰节点。
+4. 需要“按下音效 + 视觉脉冲”时，加 `InputFeedbackObserver`，见 [Input Feedback](input-feedback.md)，不要给 `UXButton` 挂旧 clip 组件。

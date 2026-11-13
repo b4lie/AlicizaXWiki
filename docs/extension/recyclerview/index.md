@@ -3,7 +3,7 @@
 
 `RecyclerView` 是 `com.alicizax.unity.ui.extension` 中的虚拟滚动列表组件，负责列表项复用、滚动、布局、吸附、滚动条和局部刷新。业务层通常通过 `UGList`、`UGMixedList`、`UGLoopList`、`UGGroupList` 使用它，而不是直接操作内部 `IAdapter`。
 
-对应包版本：`com.alicizax.unity.ui.extension` `2.1.11`。
+对应包版本：`com.alicizax.unity.ui.extension` `4.0.0`。
 
 源码位置：
 
@@ -89,13 +89,30 @@ public interface IMeasuredViewData : ISimpleViewData
 | `CurrentData` | 当前绑定的数据 |
 | `CurrentIndex` | 当前数据索引 |
 | `CurrentBindingVersion` | 当前绑定版本，可用于异步加载回调校验 |
-| `IsBindingCurrent(version)` | 判断异步回调是否仍对应当前绑定 |
 | `RequestResize()` | 绑定后文本或资源改高时，按当前 Holder 实测长度写回偏移表 |
 | `SetSelect()` | 将当前 `DataIndex` 提交为列表选择项 |
 | `OnSelectionChange(bool)` | 选择状态变化回调 |
 | `OnClear()` | Holder 被回收或重新绑定前的清理回调 |
 
-如果异步加载图片，建议在 `OnBind` 记录 `CurrentBindingVersion`，回调时用 `IsBindingCurrent(version)` 判断当前 Holder 是否仍绑定同一份数据。
+如果异步加载图片，建议在 `OnBind` 记录 `CurrentBindingVersion`，回调时比较版本是否仍相同：
+
+```csharp
+protected override void OnBind(BagItemData data, int index)
+{
+    uint version = CurrentBindingVersion;
+    LoadIconAsync(data.Icon, sprite =>
+    {
+        if (CurrentBindingVersion != version)
+        {
+            return;
+        }
+
+        icon.sprite = sprite;
+    });
+}
+```
+
+需要导航的模板不要直接实现内部接口，改为继承 `NavigationViewHolder<TData>` 或 `InteractiveViewHolder<TData>`；后者同时处理鼠标点击。见 [RecyclerView 导航](navigation.md)。
 
 ## 注意事项
 

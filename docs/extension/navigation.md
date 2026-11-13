@@ -1,217 +1,119 @@
-# Navigation 导航模块
+# NavigationScope 导航
 
-`Navigation` 在 Input System 之上管理 UI 焦点域：哪个窗口还活着、谁能当手柄/键盘焦点、谁只挡下层、关闭进缓存后为什么不能再被方向键走进去。
+`NavigationScope` 在 Input System 之上管理 UI 焦点域：哪个窗口/面板能接收手柄或键盘焦点、谁挡住下层、关闭进缓存后为什么不能再被方向键选中。
 
 源码位置：
 
-- 本地包：`Client/Packages/com.alicizax.unity.input`
-- 运行时：`Client/Packages/com.alicizax.unity.input/Runtime/Navigation`
-- 编辑器：`Client/Packages/com.alicizax.unity.input/Editor/Navigation`
-
-安装：先装 `com.alicizax.unity.ui.extension`。需要导航、快捷键或 InputGlyph 时再装 `com.alicizax.unity.input`。
-
-编译条件：`com.alicizax.unity.input` 的 asmdef 检测到 `com.unity.inputsystem` 后自动生成 `INPUTSYSTEM_SUPPORT`。导航代码受 `#if INPUTSYSTEM_SUPPORT` 保护，不需要手加 `UX_NAVIGATION`。
-
-## 核心概念
-
-| 概念 | 类型 | 说明 |
-| --- | --- | --- |
-| 导航系统 | `UXNavigationSystem` | 静态管理器。`InputActionProvider` 初始化时启动，关闭时 Shutdown。 |
-| 导航域 | `UXNavigationScope` | 挂在窗口或独立面板根上。管理烘焙/运行时 `Selectable`，并按策略改 `Navigation.Mode`。 |
-| 存活 | Alive | 节点激活、`canvas.enabled`、Holder/Canvas 处于 `UIComponent.UIShowLayer`。 |
-| 可焦点 | Focus / `Navigable` | Alive 且勾选 Focus、且有可用 Selectable 时，才能成为 Top。 |
-| 挡板 | Block / `BlockLowerScopes` | Alive 时挡住优先级更低的域。自己可以不当焦点（Loading）。 |
-| 焦点原因 | `UXFocusChange` | 程序化补选时标记 `Cause.Programmatic`。音频模块据此丢掉 Focus 音。 |
-
-已删除：`UXNavigationSkip`、`UXNavigationManager`、`UXNavigationModeListener`、`UXSelectionAudio`。输入设备切换走 `UXInput.Watch`。UI 音效见 [UXUiAudio](uxui-audio.md)。
+- `Client/Packages/com.alicizax.unity.input/Runtime/Navigation`
+- Editor：`Client/Packages/com.alicizax.unity.input/Editor/Navigation`
 
 ## 使用前提
 
-1. 已安装 `com.alicizax.unity.ui.extension` 与 `com.alicizax.unity.input`。
-2. 已安装 `com.unity.inputsystem`，并切到 Input System 后端。
-3. 场景里有 `EventSystem`。
-4. 常驻节点上有 `InputActionProvider`（它会 `UXNavigationSystem.Initialize()`）。
+1. 安装 `com.alicizax.unity.ui.extension` 和 `com.alicizax.unity.input`。
+2. 安装 `com.unity.inputsystem` 并启用 Input System 后端。
+3. 场景中有 `EventSystem`。
+4. 场景中有 `InputService`，它会初始化 `UXInput.Navigation`。
 
-不需要再挂 Navigation Manager。Scope 在 `Awake` 里自己注册。
+## 给窗口加导航域
 
-## 快速接入
+在窗口或面板根节点添加 `NavigationScope`：
 
-### 1. 为窗口添加导航域
-
-在窗口 Prefab 根节点（或独立焦点面板根）上挂 `UXNavigationScope`。
+```text
+Add Component > UI > Navigation Scope
+```
 
 Inspector：
 
 | 字段 | 说明 |
 | --- | --- |
-| `Default` | 进入该域时默认选中的控件 |
-| `Holder` | 绑定 `UIHolderObjectBase`。打开/关闭会刷新导航。点 Refresh 会自动绑。 |
-| `Selectables` | 烘焙的静态控件列表。点刷新按钮按层级收集。 |
-| `Remember` | 重新打开时优先恢复上次选中 |
-| `Focus` | 开：本域可以成为手柄/键盘焦点。关：本域不接收选中。 |
-| `Block` | 开：本域存活时挡住下层导航。关：不挡下层。 |
+| `Default Selectable` | 进入该域时默认选中的控件 |
+| `Holder` | 所属 `UIHolderObjectBase`；窗口/Widget 绑自身 Holder，普通面板绑父级 UI 的 Holder |
+| `Baked Selectables` | 编辑器烘焙的静态控件 |
+| `Remember Last Selection` | 重新打开时恢复上次选中 |
+| `Block Lower Scopes` | 当前域存活时挡住下层导航 |
 
-旧 Prefab 没有 `Focus` 字段时，反序列化会当成开启。
+`Holder` 必须绑定；没有 Holder 的 Scope 不会存活。点击 Inspector 上的刷新按钮可按层级收集 `Selectable`。Scope 在 `OnEnable` 自动注册，Holder 显示/关闭或销毁时会自动刷新，不需要额外的导航管理器。
 
-### 2. 烘焙静态 Selectable
+## 焦点与遮挡
 
-点 Inspector 上的 Refresh。会收集本 Scope 子树里、导航模式不是 `None` 的 `Selectable`。Prefab 结构变了再点一次。
+- `Block Lower Scopes = true` 的 Scope 存活时，会挡住优先级更低的作用域。
+- 作用域按 Canvas 排序、显示顺序、层级深度决定优先级；嵌套 Scope 优先于祖先。
+- 有可用 `Selectable` 且有优先级的 Scope 才成为焦点。
+- Loading 全屏层可以只开 `Block`、不配置可用控件：自己不当焦点，同时挡住下层。
+- Toast/飘字可以不挡下层，让下层继续导航。
 
-局部不想进图：不要 bake、不要 `RegisterSelectable`，或把该控件 `Navigation.Mode` 设为 `None`。不要再挂 Skip 组件。
+| 场景 | Block | 结果 |
+| --- | --- | --- |
+| 普通窗口/弹窗 | 开 | 自己接管焦点，挡住下层 |
+| Loading 遮罩 | 开 | 挡住下层；没有可用控件时焦点为空 |
+| Toast / 飘字 | 关 | 当自己不存在，下层继续导航 |
+| 只展示不抢焦点的浮层 | 按需 | 不配置控件即可不成为焦点 |
 
-### 3. 动态注册运行时控件
+## 动态注册控件
 
-虚拟列表等运行时生成的控件要手动注册：
+虚拟列表、运行时生成的按钮等不在烘焙列表里的控件要手动注册：
 
 ```csharp
-using AlicizaX.UI.UXNavigation;
+using AlicizaX.Input;
 using UnityEngine;
 using UnityEngine.UI;
 
-public sealed class VirtualListItem : MonoBehaviour
+public sealed class RuntimeScopeItem : MonoBehaviour
 {
-    private UXNavigationScope _scope;
-    private Selectable _selectable;
+    [SerializeField] private NavigationScope scope;
+    [SerializeField] private Selectable selectable;
 
-    private void Awake()
+    private void OnEnable()
     {
-        _selectable = GetComponent<Selectable>();
+        scope.RegisterSelectable(selectable, rememberable: true);
     }
 
-    public void AttachToScope(UXNavigationScope scope)
+    private void OnDisable()
     {
-        _scope = scope;
-        _scope.RegisterSelectable(_selectable, rememberable: true);
-    }
-
-    private void OnDestroy()
-    {
-        if (_scope != null)
-        {
-            _scope.UnregisterSelectable(_selectable);
-        }
+        scope.UnregisterSelectable(selectable);
     }
 }
 ```
 
-`RecyclerViewNavigationController` 会把自己注册进父级 Scope，见 `RecyclerView.Navigation.md`。
+`NotifySelectableStateChanged()` 用于 `interactable`、`active` 变化后主动刷新；运行时修改 Canvas 排序也调用它。
 
-### 4. 强制补选策略
-
-```csharp
-UXNavigationSystem.GamepadRequireSelection = true;   // 默认 true
-UXNavigationSystem.KeyboardRequireSelection = false; // 默认 false
-UXNavigationSystem.SetRequireSelection(gamepad: true, keyboard: false);
-```
-
-只在「当前没有合法焦点」时补选。关掉策略不会清掉已有选中。切到手柄/摇杆且策略开启时才会 Ensure。
-
-## Focus / Block 怎么配
-
-两个开关正交，不要再用 Skip。
-
-| 场景 | Focus | Block | 效果 |
-| --- | --- | --- | --- |
-| 普通窗 / 确认框 | 开 | 开 | 自己当焦点，挡住下层 |
-| Loading / 全屏挡板 | **关** | **开** | 自己不选中，下层全部 `Mode.None`，当前选中会被清掉 |
-| Toast / 飘字 | 关 | 关 | 当自己不存在，下层继续导航 |
-| 可点但不抢手柄的装饰面 | 关 | 按需 | 有按钮也不进 Top |
-
-Loading 示例：
-
-```text
-Loading (UXNavigationScope, Focus = 关, Block = 开)
-HUD     (UXNavigationScope, Focus = 开, Block = 开)  ← 被挡住，不能导航
-```
-
-## 存活 / 焦点 / 压制
-
-每次刷新：
-
-1. **Alive**：`activeInHierarchy`、`canvas.enabled`、Holder（没有 Holder 则看 Canvas）layer == `UIComponent.UIShowLayer`。
-2. **Focusable**：Alive && `Navigable` && 至少有一个可用 Selectable。
-3. **Occluder**：Alive && `Block`。
-4. **Top**：Focusable 里按 `sortingOrder` → 层级深度 → `ActivationSerial` 取最高。若最高挡板自己不可焦点（Loading），Top 为空。
-5. **Suppress**：非 Alive、非 Focusable、或被更高 Occluder 挡住 → `Navigation.Mode = None`。
-
-关窗进缓存时 UI 只改 Holder layer、关掉 `canvas.enabled`，对象仍激活。因此 **非 Alive 也必须抑制**，否则 UGUI 的 `FindSelectable` 仍会走进缓存窗。
-
-优先级：
-
-| 顺序 | 规则 |
-| --- | --- |
-| 1 | `Canvas.sortingOrder` 更高优先 |
-| 2 | 层级更深优先 |
-| 3 | 最近一次变为 Alive 的序号更大优先 |
-
-## 焦点恢复
+## 补选策略
 
 ```csharp
-[Window(UILayer.UI)]
-public sealed class InventoryWindow : UIWindow<ui_InventoryWindow>
-{
-    protected override void OnInitialize()
-    {
-        // Prefab 上 UXNavigationScope：
-        //   Remember = true
-        //   Default = 第一格
-        //   Focus = 开
-        //   Block = 开
-    }
-}
+UXInput.Navigation.GamepadRequireSelection = true;   // 默认 true
+UXInput.Navigation.KeyboardRequireSelection = false; // 默认 false
+
+UXInput.Navigation.SetRequireSelection(gamepad: true, keyboard: false);
 ```
 
-在背包选中第 5 格后打开详情，关掉详情后焦点回到第 5 格。只有烘焙控件、或 `RegisterSelectable(..., rememberable: true)` 的运行时控件会被记住。
+- 只在当前没有合法焦点时补选；关闭策略不会清掉已有焦点。
+- 手柄/键盘只在对应策略开启时自动补选。
+- Scope 被上层遮挡时会清掉当前焦点，等上层关闭后按 `Remember Last Selection` 恢复。
 
-## 与 UIHolder 的关系
+## 与 RecyclerView 配合
 
-`Holder` 绑上后订阅 `OnWindowAfterShowEvent` / `OnWindowAfterClosedEvent`，开关窗自动刷新。不侵入 UI 框架的 WindowAttribute。
-
-Alive 不靠 `UIState` 枚举，靠 Holder layer + `canvas.enabled`。缓存层会关 Canvas，关窗会把 Holder 改到 Hide 层，两者都会让域出局并保持抑制。
+`RecyclerViewNavigationController` 作为列表唯一的 EventSystem 选中对象，把自己注册进父级 `NavigationScope`。列表项继承 `NavigationViewHolder<TData>` 或 `InteractiveViewHolder<TData>` 参与虚拟焦点，见 [RecyclerView 导航](recyclerview/navigation.md)。
 
 ## API 速查
 
-### UXNavigationSystem
-
 | API | 说明 |
 | --- | --- |
-| `GamepadRequireSelection` | 手柄/摇杆是否强制补选。默认 true |
-| `KeyboardRequireSelection` | 键鼠是否强制补选。默认 false |
-| `SetRequireSelection(bool gamepad, bool keyboard)` | 一次改两套策略 |
-
-`Initialize` / `Shutdown` 由 `InputActionProvider` 调用，业务不要自己开。
-
-### UXNavigationScope
-
-| API | 说明 |
-| --- | --- |
-| `RegisterSelectable(Selectable, bool rememberable = false)` | 注册运行时控件 |
-| `UnregisterSelectable(Selectable)` | 注销运行时控件 |
-| `NotifySelectableStateChanged()` | interactable/active 变化后通知刷新 |
-| `Navigable` | 是否可当焦点（Inspector 名 Focus） |
-| `BlockLowerScopes` | 是否挡住下层（Inspector 名 Block） |
-| `RememberLastSelection` | 是否记住上次选中 |
-| `DefaultSelectable` | 默认选中 |
-| `NavigationSuppressed` | 当前是否被写成 `Mode.None` |
-
-### UXFocusChange
-
-导航补选、开窗默认选中、手柄强制选中都走 `UXNavigationSystem.SetSelected`，内部会：
-
-```csharp
-using (new UXFocusChange.Scope(UXFocusChange.Cause.Programmatic))
-    eventSystem.SetSelectedGameObject(selected);
-```
-
-玩家拨杆 / Tab 走 `InputSystemUIInputModule`，不会打这个戳，`UXFocusChange.Current` 保持 `User`。
-
-业务若自己 `SetSelectedGameObject` 且不想播 Focus 音，同样包一层。导航包不播音，也不再提供 `UXSelectionAudio`。
+| `NavigationScope.RegisterSelectable(Selectable, bool rememberable = false)` | 注册运行时控件 |
+| `NavigationScope.UnregisterSelectable(Selectable)` | 注销运行时控件 |
+| `NavigationScope.NotifySelectableStateChanged()` | 控件状态变化后刷新 |
+| `NavigationScope.DefaultSelectable` | 默认选中 |
+| `NavigationScope.RememberLastSelection` | 是否记住上次选中 |
+| `NavigationScope.BlockLowerScopes` | 是否挡住下层 |
+| `NavigationScope.NavigationSuppressed` | 当前是否被抑制 |
+| `NavigationScope.NavigationSuppressionChanged` | 抑制状态变化事件 |
+| `InputNavigation.GamepadRequireSelection` | 手柄自动补选，默认 true |
+| `InputNavigation.KeyboardRequireSelection` | 键鼠自动补选，默认 false |
+| `InputNavigation.SetRequireSelection(bool, bool)` | 一次设置两套策略 |
 
 ## 注意事项
 
-1. Prefab 结构变了要重新 Refresh bake，否则新按钮不在列表里。
-2. 运行时生成的控件必须 `RegisterSelectable` / `UnregisterSelectable`。
-3. `Block` 只改导航图，不挡鼠标。要彻底点不透，配合 `CanvasGroup.blocksRaycasts` 或关 GraphicRaycaster。
-4. 输入类型来自 `UXInput.Watch`，不是旧的 `UXNavigationModeListener`。
-5. 不要在选中回调里反复改 Scope 激活状态；刷新有重入保护，但状态会推迟。
-6. 局部排除用「不进列表」，不要恢复 `UXNavigationSkip`。
+1. `NavigationScope` 的 `Holder` 必须绑定，否则 Scope 不会存活。
+2. 运行时生成的控件必须 `RegisterSelectable` / `UnregisterSelectable`，否则方向键找不到。
+3. `Block` 只影响导航，不拦截鼠标；需要彻底挡住点击时配合 `CanvasGroup` 或 `GraphicRaycaster`。
+4. Scope 被遮挡或没有候选控件时会被抑制；不要把它和业务选中状态混在一起。
+5. Prefab 结构变化后重新烘焙 `Baked Selectables`。

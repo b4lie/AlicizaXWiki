@@ -5,12 +5,14 @@
 | 配置 | 说明 |
 | --- | --- |
 | `Direction` | `Vertical`、`Horizontal`、`Custom` |
-| `Alignment` | `Left`、`Center`、`Top` |
+| `Center Cross Axis` | 内容不足一屏时是否在交叉轴居中 |
 | `Spacing` | 项间距 |
 | `Padding` | 内容内边距 |
-| `MovementType` | `Elastic` 回弹或 `Clamped` 硬限制 |
-| `Scroll` | `AlwaysDisable`、`AlwaysEnable`、`WhenScrollable` |
+| `Movement Type` | `Elastic` 回弹或 `Clamped` 硬限制 |
+| `Scroll Mode` | `AlwaysDisable`、`AlwaysEnable`、`WhenScrollable` |
 | `Snap` | 停止滚动后吸附到最近项 |
+| `Snap Duration` | 吸附动画时长 |
+| `Refresh Mode` | `Immediate` 或 `AfterSettle`（滚动停止后刷新） |
 | `Inertia` | 是否启用惯性滑动 |
 | `DecelerationRate` | 惯性减速率，范围 `[0.001, 0.999]`，值越小减速越快 |
 | `ScrollSpeed` | 平滑滚动速度系数 |

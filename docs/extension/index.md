@@ -1,128 +1,111 @@
 # UI Extension 扩展包
 
-`com.alicizax.unity.ui.extension` 是 UI 框架之外的一组常用 UI 控件和列表扩展。当前文档对应包版本 `2.1.11`。输入图标、快捷键和导航能力已拆到可选输入扩展包 `com.alicizax.unity.input`。它不负责窗口生命周期，窗口打开、关闭、层级和 Holder 生成仍然由框架 UI 模块处理。
+`com.alicizax.unity.ui.extension` 提供一组基于 UGUI 的增强控件和虚拟列表。当前文档对应包版本 `4.0.0`。
 
-源码位置：
+它不负责窗口生命周期；窗口、Holder 和层级仍由 [UI 界面](../modules/ui/index.md) 管理。快捷键、导航、输入图标和交互反馈已经拆到 `com.alicizax.unity.input`，见 [Input 输入](../modules/input/index.md)。
 
-- `Client/Packages/com.alicizax.unity.ui.extension/Runtime`
-- `Client/Packages/com.alicizax.unity.ui.extension/Editor`
-- 可选输入扩展：`Client/Packages/com.alicizax.unity.input`
-- 项目示例：`Client/Assets/Scripts/Hotfix/GameLogic/UI`
+## 组件
 
-## 模块划分
-
-| 文档 | 内容 |
+| 控件/模块 | 用途 |
 | --- | --- |
-| [UXComponent](uxcomponent.md) | `UXButton`、`UXToggle`、`UXImage`、`UXDraggable` 索引 |
-| [UXButton](uxbutton.md) | `UXButton`、`UXSelectable` 子节点状态 |
-| [UXToggle](uxtoggle.md) | `UXToggle`、`UXGroup` 分组、页签切换 |
-| [UXUiAudio](uxui-audio.md) | UI 语义音效、`UXUiAudioProfile`、单控件 Override |
-| [UXImage](uximage.md) | 渐变绘制、镜像模式、进度条 |
-| [UXDraggable](uxdraggable.md) | 拖拽事件转发、可拖拽弹窗 |
-| [HotkeyComponent](hotkey-component.md) | 可选 input 包：Input System 快捷键绑定、优先级规则 |
-| [RecyclerView](recyclerview/index.md) | 虚拟列表总览、`ViewHolder`、数据源与适配器 |
-| [RecyclerView.Navigation](recyclerview/navigation.md) | 可选 input 包：RecyclerView 手柄/键盘导航、虚拟焦点、ViewHolder 导航接口和 UXNavigation 接入 |
-| [InputGlyph](input-glyph.md) | 可选 input 包：Input System 按键图标、TMP Sprite 标签和图标数据库 |
-| [UXInput](uxinput.md) | 可选 input 包：设备监听、输入读取、运行时重绑定、震动和输入诊断 |
-| [Navigation](navigation.md) | 可选 input 包：多输入设备 UI 焦点管理、`UXNavigationScope`、顶层 Scope 选择、导航压制、`UXFocusChange` |
+| [UXButton](uxbutton.md) | 增强按钮，保留 `onClick`，支持子节点状态和外部视觉状态 |
+| [UXToggle](uxtoggle.md) | 增强 Toggle、`UXGroup` 单选分组 |
+| [UXImage](uximage.md) | 渐变、镜像、描边、阴影和运行时图集 |
+| [UXDraggable](uxdraggable.md) | 把 UGUI 拖拽事件转成 UnityEvent |
+| [RecyclerView](recyclerview/index.md) | 虚拟滚动列表、多模板、分组、循环和导航 |
 
-## 使用前提
+## 快速开始
 
-工程需要已经接入基础 UI 模块，并在启动场景中配置好：
-
-- `RootModule`
-- `TimerComponent`
-- `ResourceComponent`
-- `UIComponent`
-
-如果使用输入图标、快捷键、按键重绑定或导航，还需要安装并启用 Unity Input System，并安装 `com.alicizax.unity.input`：
-
-```text
-Client/Packages/com.alicizax.unity.input
-```
-
-不需要手动添加 `INPUTSYSTEM_SUPPORT`、`UX_NAVIGATION` 或 `UXNAVIGATION_SUPPORT`。相关 asmdef 会根据已安装包自动生成所需宏。
-
-## 命名空间
-
-常用类型分布如下：
-
-| 类型 | 命名空间 |
-| --- | --- |
-| `UXButton`、`UXToggle`、`UXImage` | `UnityEngine.UI` |
-| `RecyclerView`、`ViewHolder`、`UGList` | `AlicizaX.UI` |
-| `UXInput`、`InputActionProvider`、`InputGlyphImage`、`InputGlyphText`、`InputVisualizer` | 全局命名空间，位于 `com.alicizax.unity.input` |
-| `HotkeyComponent`、`HotkeyComponentBase` | `UnityEngine.UI`，位于 `com.alicizax.unity.input` |
-| `UXNavigationScope`、`UXNavigationSystem`、`UXFocusChange` | `AlicizaX.UI.UXNavigation`，位于 `com.alicizax.unity.input` |
-| `UXUiAudioRouter`、`UXUiAudioProfile`、`UXUiAudioOverride` | `AlicizaX.UI.UXFeedback` |
-
-示例：
-
-```csharp
-using AlicizaX.UI;
-using UnityEngine.UI;
-
-public sealed class Demo
-{
-    private UXButton _button;
-    private RecyclerView _list;
-}
-```
-
-## 编辑器入口
-
-扩展包提供了几个常用右键创建入口：
+1. 安装 `com.alicizax.unity.ui.extension`，并确认项目已接入 UI 模块。
+2. 在 Hierarchy 右键创建控件：
 
 ```text
 GameObject/UI/UXButton
 GameObject/UI/UXToggle
 GameObject/UI/UXImage
-GameObject/UI/UXInput Field
 GameObject/UI/UXScrollView
 GameObject/UI/UXTemplateWindow
 ```
 
-输入图标数据库编辑窗口：
-
-```text
-AlicizaX/Extension/Input/Input Glyph Database
-```
-
-`UXScrollView` 会从包内模板创建一个已经带有 `RecyclerView` 结构的滚动列表，适合再按项目需要替换列表项模板。
-
-## 与 UI 模块的关系
-
-`Books/UI.md` 说明的是窗口框架和 Holder 生成；本目录说明的是具体控件和列表怎么使用。推荐接入顺序：
-
-1. 先按 [UI 模块](../modules/ui/index.md) 配好窗口、Holder 生成和 `baseui` 引用。
-2. 在 Prefab 中使用 `UXButton`、`RecyclerView` 等扩展控件。
-3. 在窗口逻辑里通过自动生成的 Holder 字段访问扩展控件。
-
-示例：
+3. 在窗口逻辑里通过生成的 Holder 字段访问控件：
 
 ```csharp
-using AlicizaX.UI;
 using AlicizaX.UI.Runtime;
-using Game.UI;
+using Cysharp.Threading.Tasks;
 using UnityEngine.UI;
 
 [Window(UILayer.UI)]
-public sealed class BagWindow : UIWindow<ui_BagWindow>
+public sealed class ShopWindow : UIWindow<ui_ShopWindow>
 {
-    private UGList<BagItemData> _items;
-
     protected override void OnInitialize()
     {
-        baseui.BtnClose.onClick.AddListener(CloseSelf);
+        baseui.BtnBuy.onClick.AddListener(OnBuy);
+        baseui.TglAutoBuy.onValueChanged.AddListener(OnAutoBuyChanged);
+    }
 
-        _items = UGListCreateHelper.Create<BagItemData>(baseui.ScrollViewItems);
+    private void OnBuy()
+    {
+        GameApp.UI.ShowUI<BuyConfirmWindow>().Forget();
+    }
+
+    private void OnAutoBuyChanged(bool isOn)
+    {
+        // ...
     }
 }
 ```
 
+## 命名空间
+
+| 类型 | 命名空间 |
+| --- | --- |
+| `UXButton`、`UXToggle`、`UXGroup`、`UXImage`、`UXDraggable` | `UnityEngine.UI` |
+| `RecyclerView`、`UGList`、`UGMixedList`、`UGGroupList`、`UGLoopList`、`ViewHolder` | `AlicizaX.UI` |
+| 输入、快捷键、导航、反馈 | `AlicizaX.Input`（输入扩展包） |
+
+## 可选输入扩展
+
+需要输入相关能力时，再安装 `com.alicizax.unity.input`：
+
+```text
+Client/Packages/com.alicizax.unity.input
+```
+
+- UI 导航：[NavigationScope](navigation.md)
+- 快捷键：[HotkeyComponent](hotkey-component.md)
+- 输入图标：[InputGlyph](input-glyph.md)
+- 交互音效：[Input Feedback](input-feedback.md)
+
+UI extension 的 asmdef 会根据是否安装 input 包生成 `UXNAVIGATION_SUPPORT`；不需要手加宏。
+
+## RecyclerView 快速创建
+
+菜单 `GameObject/UI/UXScrollView` 会从包内模板创建一个带 `RecyclerView` 结构的滚动列表。然后在窗口里创建业务列表：
+
+```csharp
+using AlicizaX.UI;
+
+private UGList<BagItemData> _items;
+
+protected override void OnInitialize()
+{
+    _items = UGListCreateHelper.Create<BagItemData>(baseui.ScrollViewItems);
+    _items.SetData(CreateItems());
+}
+```
+
+`RecyclerView` 的 `Content`、`Templates`、`Adapter` 和 `LayoutManager` 在运行期不能更换；业务通过 `UGList` 等封装更新数据。
+
+## 与 UI 模块配合
+
+1. 先按 [UI 模块](../modules/ui/index.md) 搭好窗口、Holder 和生成流程。
+2. 在 Prefab 中使用 `UXButton`、`UXToggle`、`UXImage`、`RecyclerView`。
+3. 在窗口逻辑里通过 `baseui` 访问生成字段。
+4. 需要手柄/键盘导航时再加 `NavigationScope` 和 `RecyclerViewNavigationController`。
+
 ## 注意事项
 
-1. `UXButton`、`UXToggle` 等类型在 `UnityEngine.UI` 命名空间下，和 Unity UGUI 控件同一套使用方式。
-2. `RecyclerView` 的 `SetAdapter`、`Refresh`、`RequestLayout` 是内部方法，业务层优先通过 `UGList`、`UGMixedList` 等包装类操作。
-3. `InputGlyph` 运行时不会自动 `Resources.Load` 图标库，必须在启动场景挂载 `InputActionProvider`，由它注入 `InputGlyphDatabase` 并初始化 `UXInput`。
-4. 输入读取、运行时重绑定、设备监听和震动统一走 `UXInput`；图标 UI 只监听 `UXInput.Watch` 和 `UXInput.Rebind` 的变化后刷新显示。
+1. `UXButton` 不继承 Unity `Button`，但 `onClick` 仍然是 `Button.ButtonClickedEvent`，用法基本一致。
+2. `RecyclerView` 的业务入口是 `UGList` 系列，不要直接改 `Adapter` 的内部列表。
+3. `UXImage` 的 `FlipMode.Horziontal` 是源码里的实际拼写。
+4. 输入图标、快捷键、导航和反馈都在 `com.alicizax.unity.input`，不要在本包内找旧组件。

@@ -1,23 +1,13 @@
 # RecyclerView 导航
 
-`RecyclerView.Navigation` 为虚拟列表提供手柄/键盘导航。它不把焦点绑定到可回收的 `ViewHolder` 或 item `GameObject`，而是用数据索引维护一个虚拟焦点，并通过 `RecyclerViewNavigationController` 作为列表整体接入 `UXNavigationScope`。
+`RecyclerViewNavigationController` 让虚拟列表参与手柄/键盘导航。列表项是可回收的 Prefab 实例，所以导航焦点不绑定 `ViewHolder` 或 item `GameObject`，而是绑定数据索引；控制器自己是 EventSystem 中唯一的选中对象。
 
 源码位置：
 
-```text
-Client/Packages/com.alicizax.unity.ui.extension/Runtime/RecyclerView/Navigation
-```
+- `Client/Packages/com.alicizax.unity.ui.extension/Runtime/RecyclerView/Navigation`
+- `Client/Packages/com.alicizax.unity.ui.extension/Runtime/RecyclerView/ViewHolder`
 
-依赖说明：RecyclerView 导航入口仍在 `com.alicizax.unity.ui.extension` 内，但依赖 `com.alicizax.unity.input` 提供的 `UXNavigationScope`。需要先安装 UI extension；如果列表需要手柄/键盘导航，再安装本地包 `Client/Packages/com.alicizax.unity.input`。
-
-编译条件：导航代码受 `#if INPUTSYSTEM_SUPPORT && UXNAVIGATION_SUPPORT` 保护。`INPUTSYSTEM_SUPPORT` 会在检测到 `com.unity.inputsystem` 后自动生成，`UXNAVIGATION_SUPPORT` 会在 UI extension 检测到 `com.alicizax.unity.input` 后自动生成，不需要在 Scripting Define Symbols 中手动添加宏。
-
-## 核心类型
-
-| 类型 | 说明 |
-| --- | --- |
-| `RecyclerViewNavigationController` | 挂在 `RecyclerView` 同物体上的导航入口，继承 `Selectable`，负责 Move/Submit/Cancel、焦点索引、滚动和层级恢复 |
-| `IRecyclerViewNavigationViewHolder` | 模板 `ViewHolder` 实现该接口后才参与导航，同时负责焦点表现和当前项优先处理 Move |
+依赖：UI extension + `com.alicizax.unity.input`。导航代码受 `INPUTSYSTEM_SUPPORT && UXNAVIGATION_SUPPORT` 保护，宏由 asmdef 自动生成。
 
 ## Prefab 配置
 
@@ -27,142 +17,125 @@ Client/Packages/com.alicizax.unity.ui.extension/Runtime/RecyclerView/Navigation
 ScrollView
 ├── Content
 ├── Templates
-└── 组件
+└── Components
     ├── RecyclerView
     ├── Scroller
     └── RecyclerViewNavigationController
 ```
 
-`RecyclerViewNavigationController` 带有：
+父级窗口或面板要有 `NavigationScope`。编辑器会从父节点向上找最近的 `NavigationScope` 并写入 `Navigation Scope` 字段；运行时不会自动查找。
 
-```csharp
-[RequireComponent(typeof(RecyclerView))]
-```
-
-因此不要把它挂到父物体、子物体、`Content` 或模板 item 上。
-
-父级窗口或面板需要挂 `UXNavigationScope`。在编辑器模式下，`RecyclerViewNavigationController.OnValidate()` 会从当前物体的父节点开始向上查找第一个 `UXNavigationScope` 并填入 `navigationScope` 字段。运行时不会自动查找 `navigationScope`，避免启用阶段遍历层级。
-
-## Inspector 字段
+Inspector：
 
 | 字段 | 说明 |
 | --- | --- |
-| `Recycler View` | 同物体上的 `RecyclerView`，编辑器会自动赋值 |
-| `Navigation Scope` | 父级最近的 `UXNavigationScope`，编辑器会自动赋值 |
-| `Wrap Navigation` | 普通列表到首尾边界后是否允许焦点首尾环绕 |
-| `Smooth Scroll` | 焦点变化时是否平滑滚动到目标 item |
+| `Recycler View` | 同物体上的 `RecyclerView`，自动赋值 |
+| `Navigation Scope` | 父级最近的 `NavigationScope`，自动赋值 |
+| `Wrap Navigation` | 普通列表首尾是否环绕 |
+| `Keep Focus Visible When Suppressed` | 被上层遮挡时是否保留焦点视觉 |
+| `Smooth Scroll` | 焦点变化时是否平滑滚动 |
 | `Smooth Scroll Duration` | 平滑滚动时长 |
-| `Focus Alignment` | 焦点 item 滚动到 Start / Center / End 等位置 |
-| `Exit Left/Right/Up/Down` | 到达边界且不环绕时，跳出的外部 `Selectable` |
+| `Focus Alignment` | 焦点项滚动对齐：`Start`、`Center`、`End` |
 
-`Wrap Navigation` 不是 `LoopList` 开关。它只控制导航焦点是否首尾环绕。`LoopAdapter / UGLoopList` 会被自动识别为允许环绕；普通列表如果也需要从尾跳到头，可以手动勾选。
+边界出口使用 UGUI `Selectable.navigation`（推荐 `Explicit` + `Select On Left/Right/Up/Down`），不再有独立的 Exit 字段。
 
-## ViewHolder 接入
+## 模板接入
 
-只有模板 `ViewHolder` 实现 `IRecyclerViewNavigationViewHolder`，该模板对应的数据项才会被导航。未实现接口的模板会被跳过，适合分组标题、分隔线、装饰项等不可聚焦项。
+普通 `ViewHolder<TData>` 不参与导航。需要导航的模板继承 `NavigationViewHolder<TData>` 或 `InteractiveViewHolder<TData>`：
 
 ```csharp
 using AlicizaX.UI;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-public sealed class BagItemHolder : ViewHolder<BagItemData>, IRecyclerViewNavigationViewHolder
+public sealed class BagItemHolder : InteractiveViewHolder<BagItemData>
 {
-    [SerializeField] private GameObject navigationFocusedFrame;
+    [SerializeField] private GameObject focusedFrame;
 
     protected override void OnBind(BagItemData data, int index)
     {
         // 正常绑定业务数据。
     }
 
-    protected override void OnClear()
+    protected override void OnNavigationFocused(bool focused)
     {
-        HandleNavigationFocused(false);
+        focusedFrame.SetActive(focused);
     }
 
-    public void HandleNavigationFocused(bool focused)
+    protected override void OnItemClick(BagItemData data, int index)
     {
-        navigationFocusedFrame.SetActive(focused);
-    }
-
-    public bool HandleNavigationMove(MoveDirection direction)
-    {
-        // item 内部如果有二级导航、滑条、页签等需要先处理方向输入，可在这里消费。
-        // 返回 true 表示 RecyclerView 不再移动到其它 item。
-        return false;
+        // 鼠标点击或导航提交。
     }
 }
 ```
 
-焦点样式完全由 `HandleNavigationFocused` 内部实现。导航系统不会创建独立焦点框，也不会调用 `ViewHolder.ApplySelection`，避免混淆业务选中和导航焦点。
+- `NavigationViewHolder<TData>`：只处理导航焦点和 Move/Submit，不处理鼠标点击。
+- `InteractiveViewHolder<TData>`：在导航基础上处理指针点击、按压视觉和 `OnItemClick`，适合卡片、按钮式列表项。
+- 不需要导航的模板继续继承 `ViewHolder<TData>`，会被跳过。
 
-## 进入导航
+导航焦点和业务选中是两套状态：
 
-`RecyclerViewNavigationController` 本身就是一个 `Selectable`。当 `UXNavigationScope` 选中它后，方向键或手柄方向输入会进入 `OnMove`，再由 controller 计算下一个可聚焦数据索引。
+- `OnNavigationFocused` 只画焦点视觉。
+- `SetSelect()` / `ChoiceIndex` 表示业务选中。
+- `InteractiveViewHolder` 默认 `SelectOnActivate = true`，点击或提交时同时提交业务选中。
 
-可以让 `UXNavigationScope` 自动选择，也可以在业务代码中主动选中：
+## 进入列表
+
+`RecyclerViewNavigationController` 本身是 `Selectable`。`NavigationScope` 选中它后，方向输入进入 `OnMove`，再由控制器计算下一个可导航数据索引。
+
+业务也可以主动控制：
 
 ```csharp
-navigationController.Select();
+using AlicizaX.UI;
+using UnityEngine;
+
+[SerializeField] private RecyclerViewNavigationController nav;
+
+public void FocusItem(int dataIndex)
+{
+    nav.SetFocus(dataIndex, scroll: true);
+}
+
+public void RestoreLastFocus(int dataIndex)
+{
+    nav.RestoreFocus(dataIndex);
+}
 ```
 
-或：
-
-```csharp
-EventSystem.current.SetSelectedGameObject(navigationController.gameObject);
-```
-
-Submit 会调用当前焦点数据索引的 `SetChoiceIndex`，因此可以和原有 `OnChoiceIndexChanged` 流程协作。
+| API | 说明 |
+| --- | --- |
+| `FocusedDataIndex` | 当前焦点数据索引，无焦点为 -1 |
+| `HasFocus` | 是否有焦点 |
+| `IsSuppressed` | 是否被上层 Scope 抑制 |
+| `SetFocus(int dataIndex, bool scroll = true)` | 设置焦点 |
+| `RestoreFocus(int dataIndex)` | 恢复焦点 |
+| `SetFocusFilter(Predicate<int>)` | 过滤可聚焦数据；返回 false 的项被跳过 |
 
 ## 数据刷新
 
-业务层不需要调用导航刷新 API。继续使用原有列表刷新方式：
+不需要手动通知导航。继续使用列表 API：
 
 ```csharp
-list.Data = newItems;
-list.Adapter.NotifyDataChanged();
-list.Adapter.NotifyItemChanged(index);
+items.SetData(newItems);
+items.Adapter.NotifyItemChanged(index);
 ```
 
-`Adapter` 内部会通过 internal 链路通知导航系统修正焦点：
+`Adapter` 的结构变化会通知 `RecyclerView`，控制器再按数据索引修正焦点。数据减少或当前模板不可导航时，会找最近的可导航项；没有可导航项时清空焦点。
 
-```text
-Adapter.Notify...
-  -> RecyclerView.NotifyNavigationDataChanged()
-  -> RecyclerViewNavigationController.NotifyDataSetChanged()
-```
+## 层级与遮挡
 
-如果数据数量变少、当前焦点越界或当前模板变为不可导航，controller 会自动寻找最近的可导航项；如果没有可导航项，则清空导航焦点。
+上层窗口的 `NavigationScope` 接管焦点后，底层列表的 `RecyclerViewNavigationController` 被抑制：
 
-## 布局支持
+1. 隐藏当前焦点视觉（是否保留由 `Keep Focus Visible When Suppressed` 决定）。
+2. 记住当前 `FocusedDataIndex`。
+3. 上层关闭、Scope 恢复后重新选中控制器，并恢复数据索引和滚动位置。
 
-| 布局 | 导航行为 |
-| --- | --- |
-| `LinearLayoutManager` | 按列表方向前后移动，可按 `Wrap Navigation` 环绕 |
-| `GridLayoutManager` | 按行列移动；遇到不可导航项时在同行或同列内继续查找 |
-| `MixedLayoutManager` | 按单轴列表处理，通过模板接口跳过不可导航项 |
-| `CircleLayoutManager` | 按环形方向移动，天然环绕 |
-| `LoopAdapter / UGLoopList` | 使用真实数据数量导航，焦点首尾环绕 |
-
-导航计算只使用数据索引、模板接口和 `LayoutManager` 信息，不注册可回收 item，不在 Move 热路径创建临时集合。
-
-## 层级恢复
-
-当上层 UI 打开并成为更高优先级的 `UXNavigationScope` 时，底层 scope 会被压制，`RecyclerViewNavigationController` 会隐藏当前导航焦点表现并记住 `focusedDataIndex`。
-
-上层 UI 关闭后，scope 恢复可导航，controller 会：
-
-1. 重新选中自身 GameObject。
-2. 根据之前保存的 `focusedDataIndex` 恢复焦点。
-3. 滚动到焦点项并刷新 `HandleNavigationFocused`。
-
-恢复依据是数据索引，不依赖 `ViewHolder` 或 item `GameObject`，因此不会被回收复用影响。
+恢复只依赖数据索引，不依赖被回收的 `ViewHolder` 或 item 实例。
 
 ## 注意事项
 
-1. `RecyclerViewNavigationController` 必须和 `RecyclerView` 同物体挂载。
-2. 父级需要存在 `UXNavigationScope`，编辑器会自动填入最近的父级 scope。
-3. 模板不实现 `IRecyclerViewNavigationViewHolder` 就不会参与导航。
-4. `HandleNavigationMove` 返回 `true` 会阻止 RecyclerView 移动焦点。
-5. 业务选中状态继续走 `ChoiceIndex` / `OnChoiceIndexChanged`，不要把导航焦点等同于业务选中。
-6. 运行时不要手动调用 `NotifyDataSetChanged()`，数据刷新会自动触发导航修正。
+1. 控制器必须和 `RecyclerView` 同物体，不要挂到 `Content` 或模板上。
+2. 父级必须有 `NavigationScope`；没有 Scope 时控制器不会注册。
+3. 需要导航的模板继承 `NavigationViewHolder` / `InteractiveViewHolder`，不要直接实现内部接口。
+4. `Wrap Navigation` 只控制首尾环绕，不是循环列表开关；`UGLoopList` 会被自动识别。
+5. 布局支持线性、网格、混合和圆形；自定义布局需要实现对应的导航步进接口。

@@ -146,7 +146,6 @@ nav:
           - UXToggle: extension/uxtoggle.md
           - UXImage: extension/uximage.md
           - UXDraggable: extension/uxdraggable.md
-          - UX UI 音效: extension/uxui-audio.md
       - 虚拟列表:
           - 概览: extension/recyclerview/index.md
           - 普通列表: extension/recyclerview/list.md
@@ -162,6 +161,7 @@ nav:
       - 输入图标: extension/input-glyph.md
       - 快捷键: extension/hotkey-component.md
       - UI 导航: extension/navigation.md
+      - 交互反馈: extension/input-feedback.md
       - 性能与分配: modules/input/performance.md
   - Debugger 调试器:
       - 介绍: modules/debugger/index.md

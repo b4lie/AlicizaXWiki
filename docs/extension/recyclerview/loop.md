@@ -56,7 +56,7 @@ public sealed class BannerHolder : ViewHolder<BannerData>
         uint version = CurrentBindingVersion;
         LoadImageAsync(data.ImagePath, sprite =>
         {
-            if (IsBindingCurrent(version))
+            if (CurrentBindingVersion == version)
             {
                 image.sprite = sprite;
             }

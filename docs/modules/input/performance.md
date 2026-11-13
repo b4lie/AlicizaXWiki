@@ -1,89 +1,50 @@
 # 性能与分配
 
-输入包的热路径按 **0 B/次** 托管分配设计，覆盖 `Reader` 稳态读取、`Watch` 设备上下文、`Glyph` 绑定查询、`RebindRequest` 和导航刷新。本页记录分配约定、实测数据和容量增长的边界。
+输入包的热路径主要是 `Reader` 读取、`Watch` 设备上下文、`Glyph` 查询、`Navigation` 刷新和 `Hotkey` 分发。先按使用方式控制分配，再用 Profiler 验证。
 
-所有数据来自 Unity 2022.3.62f3 Editor PlayMode，测量区间包含 Unity Input System 的调用，不是只统计输入包内部的 `new`。这些是特定用例数据，不是所有项目的统一内存上限。
+## 读取热路径
 
-## 分配约定
+- `Reader.ReadValue`、`TryReadValue`、`IsPressed`、`ButtonState.Once/Toggle` 稳态不分配；首次查询动作、组合部分时会建立缓存。
+- 组合部分只缓存一次，绑定变化后失效；不要在每帧重复 `ResolveCompositePart` 并丢弃结果，可以缓存 `InputCompositePart`。
+- `ButtonState` 必须是字段。作为局部变量每次都会重新开始边沿检测。
+- 不要在高频代码里拼接动作路径字符串；缓存 `InputAction` 或使用一次解析后的引用。
+- `OnRead` / `OnContinuousRead` 只用于调试，发布包不要订阅。
 
-- `Reader` 稳态读取（值、按住、`ButtonState.Once/Toggle`、组合部分）为 **0 B/次**。复合部分只在首次遇到新 `(action, part)` 组合时写一次缓存，绑定变化后按版本号失效。
-- `Watch` 按设备缓存上下文；连续来自当前设备的输入直接使用当前上下文；设备变化仅使该设备的缓存失效。平台类型每轮初始化确定一次。
-- `Rebind` 的 `RebindRequest` 默认值共享静态数组，不随调用分配；绑定显示字符串按 `(action, bindingIndex)` 缓存，绑定变化时清空。
-- `Glyph` 的 Profile ID、图标键、显示名、绑定索引均缓存；绑定变化时按 `Rebind.BindingVersion` 失效。
-- `InputVisualizer` 的自动记录先写入值类型历史数组、合并相同记录，绘制时才格式化文本。默认保留 12 条、初始容量 16；扩容替换原数组，清空/过期/覆盖记录时释放其中引用。仅在 `UNITY_EDITOR` 或 `DEVELOPMENT_BUILD` 中编译。
-- 首次查询、容量增长、交互式重绑定、绑定保存/加载、UI 注册快捷键分别测量；没有为这些低频操作引入对象池。固定资产的动作、绑定、设备和注册数量决定缓存/快照规模，不将任意规模的数据称作固定开销。
-- 关闭时复用集合保留容量，只清除其中的引用，不先缩容再重新分配。
+## 设备与绑定
 
-## 实测数据
+- `Watch` 按设备缓存 `InputContext`；同设备连续输入不分配，设备变化只失效对应缓存。
+- `CurrentInputType`、`CurrentInputProfile` 是属性读取，适合在 UI 刷新时比较，不要每帧触发不必要的重建。
+- `Glyph` 的图标键、显示名和绑定索引有缓存；绑定变化时统一失效。批量重绑定完成后刷新一次 UI，不要每改一个动作刷新整页。
+- `Rebind` 是低频操作，但 Unity 的 `RebindingOperation`、JSON 和文件写入会产生分配；不要在打开设置页时反复开始/取消。
 
-本机 Unity 2022.3.62f3 的 Mono 中 `GC.GetAllocatedBytesForCurrentThread()` 未能检测已知分配。输入包使用 `UnityEngine.Profiling` 的 `GC.Alloc` 原始帧数据测量（`Tests/PlayMode/InputAllocationCapture.cs`），4096 字节数组校准得到 4,128 B / 1 次。
+## 导航
 
-| 场景 | 首次 / 新 key | 稳态（2000 次循环） |
-| --- | ---: | ---: |
-| `Reader` 混合读取（值/按住/Once/Toggle/组合部分） | — | **0 B** |
-| `Reader` 新组合部分 | 916 B / 10 次分配 | **0 B** |
-| `Reader.TryReadValue<float>`，开启诊断记录，独立冷启动用例 | 302 B / 4 次分配 | **0 B** |
-| `Watch.ResolveContext` 同设备 | 0 B | **0 B** |
-| `Watch` 同设备连续真实回调（2000 次有效活动） | — | **0 B** |
-| `Watch` 多设备交替查询 / 真实回调 | — | **0 B** |
-| `Glyph` 新 glyph key | 1,016 B / 26 次分配 | **0 B** |
-| `Glyph` 第二个新 key | 118 B / 3 次分配 | **0 B** |
-| `Glyph` 首次可读显示名 | 133,420 B / 959 次分配 | **0 B** |
-| `Glyph` 完整 Sprite + TMP 查询（数据库已构建，TMP 名称取自 Sprite） | 422 B / 7 次分配 | **0 B** |
-| `Glyph` 新动作绑定索引（已有容量） | 0 B | **0 B** |
-| `Watch` 首次解析新 Joystick 类型的上下文（设备已添加） | 0 B | **0 B** |
-| `Rebind` 首次绑定显示串 | 1,534 B / 31 次分配 | **0 B** |
-| `RebindRequest.ForTarget` + 缓存显示串 | — | **0 B** |
-| `UXNavigationSystem.RequestRefresh` | — | **0 B** |
-| `Hotkey` Scope 链路派发至 `ISubmitHandler` | 32 B / 1 次，创建该 EventSystem 的 `BaseEventData` | **0 B** |
-| `InputVisualizer` 自动记录 `IsPressed` | 0 B | **0 B**（连续 Pressed + Value 记录共 4000 条） |
-| `InputVisualizer` 显示行文本生成 / 缓存查询 | 412 B / 11 次（首次格式化） | **0 B**（2000 次缓存文本查询） |
+- `NavigationScope` 的结构性变化（注册、注销、Holder 显示/关闭、控件增删）会触发刷新；稳态每帧只做快路径检查。
+- 运行时列表项不要每帧 `RegisterSelectable` / `UnregisterSelectable`；在 `OnEnable` / `OnDisable` 成对处理。
+- 修改 `interactable`、激活状态或 Canvas 排序后调用 `NotifySelectableStateChanged()`，不要依赖每帧自动发现。
+- 一个窗口一个 Scope，不要为每个按钮挂 Scope。
 
-## 容量增长与低频操作
+## 热键
 
-| 操作及本次规模 | 测量结果 | 触发频率和释放责任 |
-| --- | ---: | --- |
-| Glyph 首次绑定查询 / 增至 80 个动作 | 1,424 B / 1 次；随后 4,020 B / 3 次 | 首次建立解析状态、容量不足时；模块关闭清空引用，实例替换后旧存储可回收 |
-| Watch 上下文增至 20 个 Joystick | 1,260 B / 2 次 | 设备缓存扩容；设备移除时删项，关闭时清空；2000 次稳定查询为 0 B |
-| Visualizer 历史容量从 16 增至 32 | 1,824 B / 1 次 | 修改历史容量后首次记录；旧数组可回收，新数组随组件释放 |
-| 注册 1 个 Hotkey | 1,196 B / 19 次 | 注册时创建 Scope/动作状态/订阅，注销时解除引用；不是按键派发成本 |
-| 20 次最后一个 Hotkey 注销后重新注册 | 33,680 B / 500 次，平均 1,684 B/次 | 包含反复销毁/创建焦点重置 Hook；只在 UI 注册变化时发生，不在每帧执行 |
-| 首次交互式重绑定开始 + 取消 | 2,606 B / 34 次 | 一次用户重绑定；Unity RebindingOperation 及配置数据由完成、取消或关闭流程 Dispose |
-| 后续 20 次重绑定开始 + 取消 | 19,720 B / 140 次，平均 986 B/次 | 操作本身仍会分配；三个回调委托由模块复用，不再每次捕获闭包 |
-| 准备、应用并保存一次绑定 | 17,569 B / 186 次 | 本例 4 个动作、8 条绑定；包含 Unity 绑定解析、JSON 和文件写入；临时数据由 GC 回收，文件持久保留 |
-| 关闭会话 | 2,160 B / 32 次 | 恢复启动前绑定覆盖；一次 Provider 销毁/会话关闭 |
-| 创建新会话并加载上例文件 | 60,420 B / 243 次 | 一次 Provider Awake；模块、缓存和订阅归本次会话，关闭时统一清理 |
+- 热键在 `OnEnable` 注册、`OnDisable` 注销；频繁开关窗口会产生 Scope 注册成本，但不会每帧发生。
+- 同一 Holder 的同一 action/pressType 多个注册是允许的，但会增加分发候选；能用单个组件解决时不要重复挂。
+- 热键动作必须来自 `InputService` 的同一份资产；不要为每个组件创建独立资产。
 
-缓存规模由实际动作、控制路径、设备和配置数量决定；上表是指定用例数据，不是所有项目的统一内存上限。
+## 输入图标与反馈
 
-冲突通知仅在有监听者且实际冲突时创建独立列表，最多对应资产中的绑定数；应用/丢弃通知仅在有监听者时复制暂存数组，长度为本次变更数。它们是事件接收方可保留的快照，最后一个持有者释放后由 GC 回收，不放入共享池。
+- `InputGlyphImage` / `InputGlyphText` 已监听 Profile 和绑定变化；不要额外每帧刷新。
+- `InputFeedback` 按“Cue + 设备”匹配规则，开销低；主题规则不要无限增长，按 Cue/设备合并。
+- 没有 `IAudioService` 时反馈直接跳过，不会反复报错。
 
-## 首次成本与 InputVisualizer
+## 用工具确认
 
-首次可读显示名包含 Unity 的路径转可读文本过程，以上采样没有逐对象调用栈归因，不能把 133 KB 全部归为包外成本。Sprite/TMP 命中现在完全跳过这条备用文本路径；数据库构建和设备创建发生在相应查询用例的测量区间外。绑定变化可能需要重新生成绑定显示字符串，不能把这类首次成本算入稳态 0 B。
+- Profiler 中观察 `GC.Alloc`，分别测打开窗口、滚动列表、切换设备、重绑定和导航刷新。
+- `InputVisualizer` 只在 Editor/Development Build 编译，正式包不包含。
+- 先测真实业务路径，不要用单次冷启动数据推断稳态开销。
 
-`InputVisualizer` 的 **0 B 覆盖自动记录和已有文本的缓存查询**。IMGUI 接收不可变字符串，新的显示文本仍需分配；时间戳使用栈缓冲格式化，不再创建中间字符串。
+## 注意事项
 
-实测示例 `Reader: Pressed Gameplay/Jump` 带时间戳为 **94 B / 1 个最终字符串**，同帧记录和取文本 2000 次合计仍为 94 B；后续更新时间戳的绘制帧需要重新生成该行。若 12 条同长度记录每秒更新 60 次，仅这些字符串就是约 66 KiB/s，不能称作低频开销；默认不开启时间戳，文本长度改变也会改变字节数。
-
-`LogInput(string, object)` 的手动格式化、调用方装箱以及 IMGUI 本身的绘制总分配未包含在此 0 B 结论中。只查看输入逻辑时可关闭屏幕绘制；普通发布包不编译该诊断组件。
-
-## CPU 对比（历史）
-
-同机、同一 Unity Editor / Profiler 采样方式，预热后每项运行 2000 次循环。前后各记录一次，单位为毫秒；真实回调包括 Input System 的事件排队和更新成本。
-
-| 场景 | 重构前 | 重构后 | 前后 GC |
-| --- | ---: | ---: | ---: |
-| 同设备上下文查询 | 0.0071 | 0.0075 | 0 B / 0 B |
-| 键盘、鼠标、手柄交替查询（6000 次查询） | 1.6880 | 0.0482 | 0 B / 0 B |
-| 键盘与手柄交替真实回调（8000 次更新、4000 次有效活动） | 33.7114 | 28.2937 | 0 B / 0 B |
-
-主要收益在多设备交替时复用各设备缓存，同设备查询耗时基本不变。另测同设备连续真实回调：4000 次 Input System 更新、2000 次有效活动，共 13.0724 ms、0 B。此 CPU 对照保留自此前 Watch 优化，本轮没有重新做 CPU 前后对比。
-
-## 验证
-
-本轮输入包验证（2026-11-06）：EditMode **129/129**、PlayMode **36/36** 通过；随后针对诊断单数组存储、冷启动、文本缓存与时间戳补测 **1/1** 通过。
-
-正常重载、关闭 Domain Reload 各连续启停两轮；Provider 组件与 GameObject 禁用期间保持连接；重复 Provider、绑定禁用、回调中开始下一次重绑定、同 Profile 设备切换等回归用例均通过。
-
-证据位于工程 `Logs/InputOptimization-20261106/`：`regression-before.xml`（原实现 8 项失败）、`edit-after.xml`、`play-verified.xml`、`diagnostics-final.xml`。性能用例见 `Tests/PlayMode/InputAllocationPlayModeTests.cs` 和 `Tests/PlayMode/InputOptimizationAllocationTests.cs`。
+1. 输入层重建后模块实例是新的，旧缓存引用需要重新获取。
+2. 首次查询、首次打开窗口、首次重绑定有初始化成本，不能按稳态 0 B 估算。
+3. 批量数据变化后只刷新一次 UI。
+4. 诊断组件和日志格式化会产生额外字符串，发布包关闭。

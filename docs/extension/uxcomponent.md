@@ -1,46 +1,76 @@
 # UXComponent 扩展组件
 
-`UXComponent` 提供一组基于 UGUI 的增强控件。它们主要解决子节点状态切换、Toggle 分组、渐变图片和 UI 语义音效等问题。快捷键、导航和 InputGlyph 已拆到独立输入扩展包中。
+`UXComponent` 是 UI extension 的 UGUI 增强控件集合，重点解决状态过渡、Toggle 分组、渐变图片、拖拽和虚拟列表。快捷键、导航、输入图标和交互反馈已经拆到可选的 `com.alicizax.unity.input`。
 
 源码位置：
 
 - `Client/Packages/com.alicizax.unity.ui.extension/Runtime/UXComponent`
-- 编辑器入口：`Client/Packages/com.alicizax.unity.ui.extension/Editor/UX`
+- 编辑器：`Client/Packages/com.alicizax.unity.ui.extension/Editor/UX`
 
-可选输入扩展：
-
-- 本地包：`Client/Packages/com.alicizax.unity.input`
-- Unity Package Manager 里显示为 `com.alicizax.unity.input`（本地 file 包）
-- 需要 `HotkeyComponent`、`Navigation` 或 `InputGlyph` 时再安装；只使用基础 UX 控件时不需要安装 input 包。
-
-## 模块划分
+## 控件入口
 
 | 文档 | 内容 |
 | --- | --- |
-| [UXButton](uxbutton.md) | `UXButton`、`UXSelectable` 子节点状态 |
-| [UXToggle](uxtoggle.md) | `UXToggle`、`UXGroup` 分组、页签切换 |
-| [UXUiAudio](uxui-audio.md) | UI Cue、`UXUiAudioProfile`、单控件 Override |
-| [UXImage](uximage.md) | 渐变绘制、镜像模式、进度条 |
-| [UXDraggable](uxdraggable.md) | 拖拽事件转发、可拖拽弹窗 |
-| [HotkeyComponent](hotkey-component.md) | 可选 input 包：Input System 快捷键绑定、优先级规则 |
+| [UXButton](uxbutton.md) | 点击、Submit、子节点过渡、外部状态 |
+| [UXToggle](uxtoggle.md) | Toggle、`UXGroup` 分组、默认选中 |
+| [UXImage](uximage.md) | 渐变、镜像、描边、阴影、运行时图集 |
+| [UXDraggable](uxdraggable.md) | 拖拽事件转发 |
+| [RecyclerView](recyclerview/index.md) | 虚拟列表、模板与数据适配 |
 
-## UI 音效绑定
+## UXSelectable 基础
 
-`UXButton` / `UXToggle` 不持有 clip，也不注入 `IUXAudioHelper`。应用加载 `UXUiAudioProfile` 后调用 `UXUiAudioRouter.Bind(profile)`；无需场景组件。详见 [UXUiAudio](uxui-audio.md)。
+`UXButton` 和 `UXToggle` 都继承 `UXSelectable`。除了 UGUI `Selectable` 的 `Transition`、`Interactable`、`Navigation`，它还提供“外部状态”：
 
-## 编译条件
+```csharp
+using UnityEngine.UI;
 
-| 宏 | 影响范围 |
-| --- | --- |
-| `TEXTMESHPRO_SUPPORT` | `UXButton`、`UXInput Field` 的 TMP 创建菜单 |
-| `INPUTSYSTEM_SUPPORT` | 由 `com.alicizax.unity.input` 自动生成，用于 input 包内的 `HotkeyComponent`、`Navigation`、`InputGlyph` |
-| `UXNAVIGATION_SUPPORT` | UI extension 检测到 `com.alicizax.unity.input` 后自动生成，用于 RecyclerView.Navigation 接入 |
+public void SetHighlighted(UXSelectable selectable)
+{
+    selectable.SetExternalState(UXSelectionState.Highlighted);
+}
 
-不需要在 Player Settings 手动添加 `INPUTSYSTEM_SUPPORT`、`UX_NAVIGATION` 或 `UXNAVIGATION_SUPPORT`。需要输入相关功能时，安装 `com.unity.inputsystem` 和 `com.alicizax.unity.input` 即可。
+public void ClearHighlight(UXSelectable selectable)
+{
+    selectable.ClearExternalState();
+}
+```
+
+外部状态适合：
+
+- 控件本身不是 EventSystem 当前选中对象，但需要显示高亮。
+- 列表项、热键焦点、引导层等由业务驱动视觉状态。
+- 临时按下脉冲：`PulseExternalState(UXSelectionState.Pressed, restoreState)`。
+
+`UXSelectionState`：`Normal`、`Highlighted`、`Pressed`、`Selected`、`Disabled`。
+
+## 子节点过渡
+
+`UXSelectable` 可以让图标、文本、背景等子节点跟随控件状态变色或换图：
+
+1. 在控件 Inspector 的 `Child Transitions` 添加子 `Graphic`。
+2. 每个子项单独设置 `Transition`、`Colors` 或 `Sprite State`。
+3. 子项的过渡类型彼此独立，可以混用颜色和图片；根节点自己的 `Target Graphic` 仍由根控件 `Transition` 决定。
+
+```text
+BtnBag (UXButton, Transition = ColorTint)
+├── Bg    (Image, 根 Target Graphic)
+├── Icon  (Image, Child Transitions)
+└── Label (TextMeshProUGUI, Child Transitions)
+```
+
+## 依赖与宏
+
+| 宏 | 来源 | 作用 |
+| --- | --- | --- |
+| `TEXTMESHPRO_SUPPORT` | 安装 TextMeshPro / UGUI 2.0+ | `UXButton` 创建菜单、TMP 相关组件 |
+| `INPUTSYSTEM_SUPPORT` | 安装 `com.unity.inputsystem` | input 包内的输入代码 |
+| `UXNAVIGATION_SUPPORT` | 安装 `com.alicizax.unity.input` | RecyclerView 导航接入 |
+
+宏由 asmdef 自动生成，不需要在 Player Settings 手动添加。只使用基础 UX 控件时不需要安装 input 包。
 
 ## 注意事项
 
-1. `UXButton`、`UXToggle` 等类型在 `UnityEngine.UI` 命名空间下，和 Unity UGUI 控件同一套使用方式。
-2. `UXButton` 不继承 Unity `Button`，但保留了 `Button.ButtonClickedEvent` 类型的 `onClick`，业务调用方式基本一致。
-3. `HotkeyComponent` 位于 `com.alicizax.unity.input`，只转发到 `ISubmitHandler`，目标组件必须实现提交接口，例如 `UXButton`、`UXToggle`。
-4. `UXImage.FlipMode.Horziontal` 的拼写来自源码枚举，代码里需要使用这个实际名称。
+1. `UXButton`、`UXToggle` 等类型在 `UnityEngine.UI` 命名空间，和 UGUI 控件同一套使用方式。
+2. `UXButton` 不继承 Unity `Button`，但 `onClick` 类型保持一致。
+3. 不要在控件上再挂旧的 UI 音效组件；交互音效统一用 input 包的 `InputFeedbackObserver` 或 `UXInput.Feedback`，见 [Input Feedback](input-feedback.md)。
+4. `UXSelectable` 的外部状态会覆盖 Selectable 自己推导的状态；清除后恢复推导状态。

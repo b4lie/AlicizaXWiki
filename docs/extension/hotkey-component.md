@@ -1,212 +1,130 @@
-# HotkeyComponent
+# HotkeyComponent 快捷键
 
-`HotkeyComponent` 基于 Unity Input System，用配置的 `InputActionReference` 触发 UI 热键行为。
-
-当前热键模块已经收敛为组件式设计：所有热键响应组件都必须继承 `HotkeyComponentBase`。原来的 `IHotkeyTrigger` 接口已删除。
+`HotkeyComponent` 用 `InputActionReference` 触发 UI 上的提交行为。它只观察动作，不启用/禁用 InputAction；动作由 `InputService` 统一启用。
 
 源码位置：
 
-- 本地包：`Client/Packages/com.alicizax.unity.input`
-- 运行时代码：`Client/Packages/com.alicizax.unity.input/Runtime/Hotkey`
-- 编辑器代码：`Client/Packages/com.alicizax.unity.input/Editor/Hotkey`
+- `Client/Packages/com.alicizax.unity.input/Runtime/Hotkey`
+- Editor：`Client/Packages/com.alicizax.unity.input/Editor/Hotkey`
 
 ## 组件结构
 
 | 类型 | 作用 |
 | --- | --- |
-| `HotkeyComponentBase` | 热键组件基类，负责通用配置、自动查找 `UIHolderObjectBase`、注册和反注册生命周期 |
-| `HotkeyComponent` | 默认 Submit 适配器，把热键转换成目标组件的 `ISubmitHandler.OnSubmit` 调用 |
-| `HotkeyPassThrough` | 标记组件，让某个 Holder 不参与热键焦点竞争，热键继续向下层可用 Holder 穿透 |
-| `UXHotkeySystem` | 热键注册、作用域解析、InputAction 事件订阅和分发系统 |
+| `HotkeyComponentBase` | 热键组件基类：Holder、Action、Press Type、注册/注销 |
+| `HotkeyComponent` | 默认 Submit 适配器：把热键转成 `ISubmitHandler.OnSubmit`，并通知旁路监听者 |
+| `IHotkeySubmitListener` | 同物体上额外的热键提交监听接口 |
+| `HotkeyPassThrough` | 标记组件：让某个 Holder 不参与热键焦点竞争 |
+| `InputHotkey` | 热键注册、焦点链和分发模块 |
 
-## HotkeyComponentBase
+## 基础用法
 
-`HotkeyComponentBase` 是所有热键响应组件的基类。
+在按钮上挂 `UXButton` 和 `HotkeyComponent`：
 
-它保留的通用能力：
+```text
+BtnConfirm (UXButton + HotkeyComponent)
+├─ Submit Target: BtnConfirm 上的 UXButton
+├─ Holder: 自动找到 ConfirmWindow 的 UIHolderObjectBase
+├─ Input Action: UI/Submit
+└─ Press Type: Performed
+```
 
-- `HotkeyAction`：热键对应的 `InputActionReference`
-- `HotkeyPressType`：触发阶段，类型为 `EHotkeyPressType`，支持 `Started`、`Performed`、`Canceled`
-- `HotkeyConsumesInput`：触发后是否消费当前热键
-- `HotkeyHolder`：所属 `UIHolderObjectBase`
-- `AssignHolderIfMissing(bool force)`：自动向父级查找 Holder
-- `OnEnable` 注册热键，`OnDisable` 反注册热键
+按下 `UI/Submit` 时，`HotkeyComponent` 调用目标对象的 `ISubmitHandler.OnSubmit`，再触发 `UXButton.onClick`。
 
-热键系统只观察 InputAction，不负责 Enable/Disable。Action 必须由输入层（如 `InputActionProvider`）启用。
+Inspector：
 
-业务层自定义热键时继承它：
+| 字段 | 说明 |
+| --- | --- |
+| `Submit Target` | 接收提交的 `ISubmitHandler`；必须有 |
+| `Holder` | 所属 `UIHolderObjectBase`，自动向上查找 |
+| `Input Action` | 热键动作 |
+| `Press Type` | `Started`、`Performed`、`Canceled`，默认 `Performed` |
+
+同一个 GameObject 可以挂多个 `HotkeyComponent`，每个组件有自己的 Action 和提交目标。
+
+## 旁路监听
+
+除了 `ISubmitHandler`，同物体实现 `IHotkeySubmitListener` 的组件也会收到热键提交：
 
 ```csharp
-using UnityEngine.UI;
+using AlicizaX.Input;
+using UnityEngine.EventSystems;
+
+public sealed class SubmitSound : MonoBehaviour, IHotkeySubmitListener
+{
+    public void OnHotkeySubmit(BaseEventData eventData)
+    {
+        // 只旁路监听，不替代 OnSubmit。
+    }
+}
+```
+
+监听者由 `HotkeyComponent` 在编辑器期解析并序列化，运行时不再扫描组件。
+
+## 自定义热键
+
+只做业务动作、不需要提交到控件时，继承 `HotkeyComponentBase`：
+
+```csharp
+using AlicizaX.Input;
 
 public sealed class CloseWindowHotkey : HotkeyComponentBase
 {
     public override void TriggerHotkey()
     {
-        // 执行业务逻辑，例如关闭窗口
+        // 关闭窗口或执行其它动作。
     }
 }
 ```
 
-## HotkeyComponent
+在 Inspector 配置 `Input Action` 和 `Press Type` 即可。`OnEnable` 注册，`OnDisable` 注销；子类覆盖时必须调用 `base`。
 
-`HotkeyComponent` 是默认的 Submit 适配器，适合挂在 `UXButton`、`UXToggle` 等实现了 `ISubmitHandler` 的控件上。
+## 焦点链
 
-触发流程：
+热键不是所有窗口同时响应：
 
-```text
-InputAction 触发
--> UXHotkeySystem 分发到当前有效 Holder 的热键组件
--> HotkeyComponent.TriggerHotkey()
--> _submitHandler.OnSubmit(_eventData)
-```
+1. 取 UI 栈最上层且未挂 `HotkeyPassThrough` 的 Holder。
+2. 在该 Holder 及其子 Holder 中找叶子作用域。
+3. 按 Canvas 排序、显示顺序和层级深度选择作用域。
+4. 从叶子 Holder 向上分发，直到命中注册的热键。
 
-`HotkeyComponent` 不直接调用 `onClick`。如果目标是 `UXButton`，通常由 `UXButton.OnSubmit` 再触发按钮点击逻辑。
-
-## Inspector 字段
-
-| 字段 | 说明 |
-| --- | --- |
-| `Component` | `HotkeyComponent` 专用字段，实际接收 Submit 的组件，必须实现 `ISubmitHandler` |
-| `Holder` | 所属 `UIHolderObjectBase`，由 `HotkeyComponentBase` 自动查找 |
-| `Input Action` | `InputActionReference`，例如 Submit、Cancel、Close |
-| `Press Type` | 热键触发阶段，默认 `Performed` |
-| `Consumes Input` | 当前热键触发成功后，是否停止沿同一焦点 Holder 的父级 scope 继续分发。不吞全局 Input System 事件 |
-
-## 配置方式
-
-1. 在按钮或控件节点上挂 `HotkeyComponent`。
-2. `Component` 指向同节点上的 `UXButton`、`UXToggle` 或其他 `ISubmitHandler`。
-3. `Holder` 会自动查找父级 `UIHolderObjectBase`。
-4. `Input Action` 指向对应热键。
-5. 窗口显示时热键生效，窗口关闭或节点禁用时自动解绑。
-
-示例：
-
-```text
-BtnConfirm (UXButton + HotkeyComponent)
-|- Component: BtnConfirm 上的 UXButton
-|- Holder: 自动找到 ConfirmWindow 的 UIHolderObjectBase
-|- Input Action: UI/Submit
-|- Press Type: Performed
-|- Consumes Input: true
-```
-
-## 自定义业务热键
-
-如果热键不是 Submit 行为，不要把逻辑塞进 `ISubmitHandler`。直接继承 `HotkeyComponentBase`：
-
-```csharp
-using UnityEngine.UI;
-
-public sealed class SwitchTabHotkey : HotkeyComponentBase
-{
-    public override void TriggerHotkey()
-    {
-        // 切换页签
-    }
-}
-```
-
-这样业务组件仍然享受统一的 Holder 自动查找、注册、解绑和焦点分发规则。
-
-## 运行时生命周期
-
-1. `Reset` / `Awake` / `OnEnable` 查找父级 `UIHolderObjectBase`。
-2. `OnEnable` 注册热键。节点 `SetActive(false)` 或组件禁用会走 `OnDisable` 并解绑；重新启用会再注册。
-3. 热键必须从 `UXInput.Reader.TryResolveAction` 解析到同一份已启用的 `InputAction`。解析失败则不注册（Development 下 warning），不会回退到 Prefab 上的 `InputActionReference.action`。
-4. `UXHotkeySystem` 在应用失焦 / 暂停时清掉当前按压锁定。
-5. `HotkeyComponent` 在 `EventSystem.current` 变化时才重建 `BaseEventData`。
-
-## HotkeyPassThrough 与焦点
-
-热键焦点按 UI 栈从高到低取**第一个可见且未挂 `HotkeyPassThrough` 的 Holder**。焦点锁在这一层后，只在该 Holder 及其子 Holder 里找热键，**不会自动落到更下面的窗口**。
-
-`HotkeyPassThrough` 是空的标记组件，挂在某个 `UIHolderObjectBase` 上后，这一层不当热键焦点，系统继续向下找。
-
-窗口例子：
+`HotkeyPassThrough` 用于 Loading、Toast、纯展示浮层：它不抢热键焦点，下层继续响应。
 
 ```text
 AWindow 有 Cancel 热键
-打开更高一层的 BWindow
+打开 BWindow
 ```
 
-| BWindow | 按 Cancel 的结果 |
+| BWindow | Cancel 结果 |
 | --- | --- |
-| 没挂 `HotkeyPassThrough`，也没有热键 | 焦点在 B，A 的热键**不会**触发 |
+| 没挂 `HotkeyPassThrough`，也没有热键 | 焦点在 B，A 不响应 |
 | 挂了 `HotkeyPassThrough` | 跳过 B，热键打到 A |
-| 自己有热键 | 打到 B |
+| 自己有 Cancel 热键 | B 响应 |
 
-适合挂 `HotkeyPassThrough`：
+不要依赖“B 没配热键就自动透传”，需要透传时主动挂 `HotkeyPassThrough`。
 
-- Loading 遮罩
-- Toast / Tooltip
-- HUD、纯展示浮层
-- 明确不该拦截下层热键的顶层 UI
+## 注册规则
 
-不要依赖“B 没配热键就自动透传”。需要透传时必须主动挂 `HotkeyPassThrough`。
-
-## 热键作用域和优先级
-
-热键按当前焦点 Holder 分发，不是所有打开窗口同时响应。
-
-先锁定栈顶可用 Holder（见上节），再在该 Holder 内部选叶 scope：
-
-| 规则 | 说明 |
-| --- | --- |
-| `Canvas.sortingOrder` 更高 | 优先响应 |
-| 层级更深 | 当 sortingOrder 相同时，子 Holder 优先 |
-| 更晚激活 | 当前两项仍相同时，后激活 Holder 优先 |
-| Canvas layer 等于 `UIComponent.UIShowLayer` | 只有显示层 Holder 才可响应 |
-
-## 重复注册规则
-
-同一个 `UIHolder scope + InputAction + PressType` 只允许一个有效热键注册。
-
-如果重复注册：
-
-- 保留先注册者
-- 后注册者会被拒绝
-- Editor 下会输出 warning
-
-如果同一个窗口内有多个 widget 想使用同一个热键，应由业务层控制启用状态，确保同一时间只有一个 widget/component 处于启用并注册状态。
-
-## InputAction 启用
-
-热键系统不启用 / 禁用 InputAction。请确保：
-
-- 运行时由 `InputActionProvider`（或等价入口）启用对应 `InputActionAsset`
-- Development 下若 action 未启用，注册时会输出 warning
-
-## 显示 Canvas 回退
-
-- Holder 自身有 Canvas：用自身 `layer` / `sortingOrder`
-- Widget 等无自身 Canvas：回退到最近祖先 Canvas（正常路径，不警告）
-- 整条父链都没有 Canvas：仅依赖生命周期 + `activeInHierarchy`，Development 下警告一次
-
-## InputGlyph 集成
-
-`InputGlyphImage` 和 `InputGlyphText` 的 `Action Source Mode` 设为 `HotkeyTrigger` 时，需要引用 `HotkeyComponentBase` 组件。
-
-它会从 `HotkeyComponentBase.HotkeyAction` 读取 action，用于显示对应输入图标。
+- 同一个 Holder 的同一个 action/pressType 允许多个组件注册，后注册（后启用）的优先。
+- 不同 Holder 的作用域按 Canvas 排序、显示序号、层级深度选择。
+- 热键注册在 `OnEnable`，禁用或节点失活会自动注销；重新启用会补注册。
+- 热键动作必须由 `InputService` 加载的同一份 `InputActionAsset` 提供；找不到动作时注册失败。
+- 动作不要求是 Button 类型，但非 Button 动作在 Development 下会输出提示；`PassThrough` 动作没有 `Started` 阶段，注册会直接失败。
 
 ## API 速查
 
 | API | 说明 |
 | --- | --- |
-| `HotkeyComponentBase.HotkeyAction` | 设置或读取热键 Input Action |
-| `HotkeyComponentBase.TriggerHotkey()` | 热键触发回调，业务层重写 |
-| `UXHotkeyExtension.BindHotKey(this HotkeyComponentBase)` | 手动注册热键 |
-| `UXHotkeyExtension.UnBindHotKey(this HotkeyComponentBase)` | 手动解绑热键 |
+| `HotkeyComponentBase.HotkeyAction` | 读取或切换热键动作；注册失败会回滚 |
+| `HotkeyComponentBase.HotkeyPressType` | 当前触发阶段 |
+| `HotkeyComponentBase.HotkeyHolder` | 所属 Holder |
+| `HotkeyComponentBase.TriggerHotkey()` | 热键触发回调，业务重写 |
+| `IHotkeySubmitListener.OnHotkeySubmit(BaseEventData)` | 旁路提交监听 |
 
-## 排查清单
+## 注意事项
 
-1. 是否安装 `com.alicizax.unity.input` 和 `com.unity.inputsystem`。
-2. 是否生成了 `INPUTSYSTEM_SUPPORT`。
-3. `Input Action` 是否为空，Input Action 所在 map 是否启用。
-4. 当前组件是否继承 `HotkeyComponentBase`。
-5. 如果使用 `HotkeyComponent`，`Component` 是否实现 `ISubmitHandler`。
-6. 当前节点和 Holder 是否 active。
-7. 当前 Holder 的 Canvas 是否在 `UIComponent.UIShowLayer`。
-8. 是否有更上层、未挂 `HotkeyPassThrough` 的窗口抢走了焦点（该窗没有热键时也会挡住下层）。
-9. 同一个 Holder 内是否重复注册了相同 action 和 press type。
+1. 热键组件必须位于 `UIHolderObjectBase` 的子树内，否则没有所属作用域。
+2. `HotkeyComponent` 的 `Submit Target` 必须实现 `ISubmitHandler`；`UXButton`、`UXToggle` 满足。
+3. 目标对象或 Holder 未激活时不会注册；重新启用后自动注册。
+4. 不要手动调用 `RegisterHotkey` / `UnregisterHotkey`，它们由生命周期维护。
+5. 同一窗口多个控件使用同一 action 时，由启用顺序决定优先级；需要确定性时只保留一个启用组件。
