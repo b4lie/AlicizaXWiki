@@ -113,15 +113,15 @@ extra_css:
 
 nav:
   - 快速开始: quickstart.md
-  - Service 基础服务: modules/service/index.md
+  - Service 服务容器: modules/service/index.md
   - Timer 计时器: modules/timer/index.md
   - Event 事件: modules/event/index.md
   - Procedure 流程: modules/procedure/index.md
   - Resources 资源:
       - 概览: modules/resource/index.md
-      - 加载与绑定: modules/resource/loading.md
-      - 资源包与下载: modules/resource/packages.md
-      - 回收与调试: modules/resource/reclaim.md
+      - 加载、租赁与绑定: modules/resource/loading.md
+      - 资源包与更新: modules/resource/packages.md
+      - 回收、统计与调试: modules/resource/reclaim.md
   - Scene 场景: modules/scene/index.md
   - GameObjectPool 实例池: modules/gameobjectpool/index.md
   - MemoryPool 内存池: modules/memorypool/index.md
@@ -131,43 +131,61 @@ nav:
       - 打开、关闭与查询: modules/ui/window.md
       - 路由与转场: modules/ui/router.md
       - Widget 与 Tab: modules/ui/widget.md
-      - 性能与缓存: modules/ui/performance.md
+      - 缓存与性能: modules/ui/performance.md
   - Audio 音频: modules/audio/index.md
-  - Localization 本地化:
-      - 概览: modules/localization/index.md
-      - 配置与词库生成: modules/localization/config.md
-      - 运行时加载: modules/localization/runtime.md
-      - TMP 绑定与预览: modules/localization/tmp.md
-  - 扩展组件:
-      - 概览: extension/index.md
-      - 基础控件:
-          - UXComponent: extension/uxcomponent.md
-          - UXButton: extension/uxbutton.md
-          - UXToggle: extension/uxtoggle.md
-          - UXImage: extension/uximage.md
-          - UXDraggable: extension/uxdraggable.md
-      - 虚拟列表:
-          - 概览: extension/recyclerview/index.md
-          - 普通列表: extension/recyclerview/list.md
-          - 混合模板: extension/recyclerview/mixed.md
-          - 循环列表: extension/recyclerview/loop.md
-          - 分组列表: extension/recyclerview/group.md
-          - 数据更新与交互: extension/recyclerview/interaction.md
-          - 配置与 API: extension/recyclerview/config.md
-          - 导航: extension/recyclerview/navigation.md
   - Input 输入:
       - 概览: modules/input/index.md
-      - 设备、读取与重绑定: extension/uxinput.md
-      - 输入图标: extension/input-glyph.md
-      - 快捷键: extension/hotkey-component.md
-      - UI 导航: extension/navigation.md
-      - 交互反馈: extension/input-feedback.md
+      - 设备、读取与重绑定: modules/input/uxinput.md
+      - 输入图标: modules/input/input-glyph.md
+      - 快捷键: modules/input/hotkey-component.md
+      - UI 导航: modules/input/navigation.md
+      - 交互反馈: modules/input/input-feedback.md
       - 性能与分配: modules/input/performance.md
+  - UI Extension 扩展组件:
+      - 概览: modules/ui-extension/index.md
+      - 基础控件:
+          - UXSelectable: modules/ui-extension/uxselectable.md
+          - UXButton: modules/ui-extension/uxbutton.md
+          - UXToggle: modules/ui-extension/uxtoggle.md
+          - UXGroup: modules/ui-extension/uxgroup.md
+          - UXImage: modules/ui-extension/uximage.md
+          - UXDraggable: modules/ui-extension/uxdraggable.md
+      - RecyclerView 虚拟列表:
+          - 概览: modules/ui-extension/recyclerview/index.md
+          - 普通列表: modules/ui-extension/recyclerview/list.md
+          - 多模板列表: modules/ui-extension/recyclerview/mixed.md
+          - 循环列表: modules/ui-extension/recyclerview/loop.md
+          - 分组列表: modules/ui-extension/recyclerview/group.md
+          - 数据更新与交互: modules/ui-extension/recyclerview/interaction.md
+          - 配置与 API: modules/ui-extension/recyclerview/config.md
+          - 列表导航: modules/ui-extension/recyclerview/navigation.md
+  - Localization 本地化:
+      - 概览: modules/localization/index.md
+      - 词库配置与生成: modules/localization/config.md
+      - 运行时加载与切换: modules/localization/runtime.md
+      - TMP 绑定与编辑器预览: modules/localization/tmp.md
+  - Config 配置管线:
+      - 概览: modules/config/index.md
+      - 表结构与 Excel 约定: modules/config/tables.md
+      - Luban 生成与脚本: modules/config/generate.md
+      - 生成物与运行时衔接: modules/config/outputs.md
+      - 常见错误排查: modules/config/troubleshooting.md
   - Debugger 调试器:
       - 介绍: modules/debugger/index.md
-      - 使用方式: modules/debugger/usage.md
+      - 启动、窗口树与日志: modules/debugger/usage.md
       - 命令控制台: modules/debugger/command.md
       - API 速查: modules/debugger/api.md
+  - Editor Extension 编辑器扩展:
+      - 概览与安装: modules/editor-extension/index.md
+      - 图集工具: modules/editor-extension/atlas.md
+      - Texture Packer: modules/editor-extension/texture-packer.md
+      - 资产引用查找: modules/editor-extension/reference-finder.md
+      - HybridCLR 构建工具: modules/editor-extension/hybridclr.md
+  - Installer 安装器:
+      - 安装入口与步骤: modules/installer/index.md
+      - 项目模板与生成目录: modules/installer/templates.md
+      - 升级、修复与卸载: modules/installer/maintain.md
+      - 安装失败排查: modules/installer/troubleshooting.md
 
 # --- 双语站点骨架（首版未启用，保持纯中文）---------------------------
 # 启用步骤：
