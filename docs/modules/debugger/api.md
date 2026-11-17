@@ -117,10 +117,9 @@
 
 ## 注意事项
 
-1. 独立命令浮窗 `AlicizaXConsoleUITK` 已移除，命令 UI 统一在 Debugger 的 `Command` 页。
-2. `Command` 页不拦截 `Debug.Log`；日志查看使用 `Console` 页。
-3. 自定义命令所在 asmdef 必须被命令表扫描，否则 `InvokeCommand` 和 `Command` 页都找不到命令。
-4. `LogNode` 来自 `MemoryPool`，`GetRecentLogs` 返回只读引用；节点只在当前帧有效，不要手动释放或跨帧保存。
-5. WebGL 不支持后台线程生成命令表、外部命令文件以及宏文件导入导出。
-6. `AlicizaXConsoleRouter.ActiveConsole` 在 `DebuggerComponent` 初始化 `Command` 窗口前为 `null`；只执行命令、不需要 UI 时用 `AlicizaXConsoleProcessor.InvokeCommand`。
-7. `[DebuggerWindow]` 自动注册依赖反射发现类型：扩展程序集在 IL2CPP 下必须用 `link.xml` 或 `[Preserve]` 保底，且窗口需要无参构造。扫描在 `DebuggerComponent.Start` 执行，只使用内置 `DebuggerService`；扫描到已存在路径时保留先注册的一方并输出 warning，之后再手动注册同一路径会抛 `GameFrameworkException`。
+1. `Command` 页不拦截 `Debug.Log`；日志查看使用 `Console` 页。
+2. 自定义命令所在 asmdef 必须被命令表扫描，否则 `InvokeCommand` 和 `Command` 页都找不到命令。
+3. `LogNode` 来自 `MemoryPool`，`GetRecentLogs` 返回只读引用；节点只在当前帧有效，不要手动释放或跨帧保存。
+4. WebGL 不支持后台线程生成命令表、外部命令文件以及宏文件导入导出。
+5. `AlicizaXConsoleRouter.ActiveConsole` 在 `DebuggerComponent` 初始化 `Command` 窗口前为 `null`；只执行命令、不需要 UI 时用 `AlicizaXConsoleProcessor.InvokeCommand`。
+6. `[DebuggerWindow]` 自动注册依赖反射发现类型：扩展程序集在 IL2CPP 下必须用 `link.xml` 或 `[Preserve]` 保底，且窗口需要无参构造。扫描在 `DebuggerComponent.Start` 执行，只使用内置 `DebuggerService`；扫描到已存在路径时保留先注册的一方并输出 warning，之后再手动注册同一路径会抛 `GameFrameworkException`。
