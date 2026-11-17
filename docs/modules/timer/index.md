@@ -1,264 +1,214 @@
-# Timer 模块
+# Timer 计时器
 
-Timer 模块提供全局计时器服务，用于延迟执行、循环执行、暂停恢复计时器，以及查询剩余时间。业务代码通过 `AppServices.Require<ITimerService>()` 获取服务。
+Timer 提供全局的延迟执行能力：一次性/循环计时、暂停与恢复、按句柄取消、可选择是否跟随 `Time.timeScale`，并支持查询剩余时间与容量统计。它面向"按秒计时"，不是逐帧调度器：每帧到期回调有固定预算，超出的部分顺延到下一帧。
 
 源码位置：
 
 - `Client/Packages/com.alicizax.unity.framework/Runtime/Modules/Timer`
+- `Client/Packages/com.alicizax.unity.framework/Editor/Modules/Timer/TimerComponentInspector.cs`
+
+## 适用场景
+
+技能冷却、延迟弹窗、引导超时、防沉迷倒计时、断线重连等待、节流刷新等"隔一段时间做一次"的逻辑。需要每帧执行的逻辑请用 Service 的 tick 接口，而不是 0 间隔计时器。
 
 ## 使用前提
 
-场景中的框架根节点需要挂载 `TimerComponent`。`TimerComponent` 会在 `Awake()` 中注册 `ITimerService`：
+场景里必须同时具备两样东西：
 
-```csharp
-if (AppServices.App.TryGet<ITimerService>(out _))
-{
-    return;
-}
+1. `TimerComponent`：挂在 `Entry.prefab` 的 `Timer` 子节点上（`[DefaultExecutionOrder(-800)]`）。它只做一件事——`Awake` 里检查容器，没有 `ITimerService` 就注册一个 `TimerService`；已经存在时直接返回，所以重复挂 `TimerComponent` 不会替换已有服务。
+2. 一个 `AppServiceRoot`（模板里是 `Entry` 上的 `RootModule`）：计时器的推进发生在 `AppServiceRoot.Update()` → `ServiceRegistry.Tick()` → `TimerService.Tick()`。只有 `TimerComponent` 而没有服务根节点，计时器永远不会触发。
 
-AppServices.App.Register<ITimerService>(new TimerService(_initialCapacity));
-```
+自己搭场景时，把 `RootModule` 与 `TimerComponent` 一起挂到常驻节点即可；`TimerComponent` 不需要任何 Inspector 配置。
 
-`RootModule` 会驱动 `ServiceWorld.Tick`，Timer 服务在 Tick 中推进计时器。
-
-## 获取服务
+获取服务两种方式等价：
 
 ```csharp
 using AlicizaX;
 using AlicizaX.Timer.Runtime;
 
 ITimerService timer = AppServices.Require<ITimerService>();
+ITimerService viaGameApp = GameApp.Timer;   // 内部同样走 Require 并缓存
 ```
 
-如果代码可能早于框架初始化执行，可以使用 `TryGet`：
+## 最短接入
 
-```csharp
-if (!AppServices.TryGet<ITimerService>(out var timer))
-{
-    return;
-}
-```
-
-## 延迟执行一次
+1. 确认 `Entry.prefab`（或自己的 `RootModule` + `TimerComponent`）在启动场景里。
+2. 拿服务并创建计时器，保存返回的句柄。
+3. 生命周期结束时用 `RemoveTimer` 释放。
 
 ```csharp
 using AlicizaX;
 using AlicizaX.Timer.Runtime;
 using UnityEngine;
 
-public sealed class TimerOnceExample : MonoBehaviour
+public sealed class TutorialTip : MonoBehaviour
 {
-    private ulong _timerHandle;
+    private ulong _handle;
 
     private void Start()
     {
-        ITimerService timer = AppServices.Require<ITimerService>();
-        _timerHandle = timer.AddTimer(OnTimer, 2f);
+        _handle = GameApp.Timer.AddTimer(ShowTip, 3f);
     }
 
     private void OnDestroy()
     {
-        if (AppServices.TryGet<ITimerService>(out var timer))
-        {
-            timer.RemoveTimer(_timerHandle);
-        }
+        if (AppServices.TryGet<ITimerService>(out var timer)) timer.RemoveTimer(_handle);
     }
 
-    private void OnTimer()
-    {
-        Debug.Log("2 seconds later.");
-        _timerHandle = 0UL;
-    }
+    private void ShowTip() => Debug.Log("3 秒后显示提示");
 }
 ```
 
-`AddTimer` 返回 `ulong` 类型句柄，后续停止、恢复、移除都通过这个句柄操作。
+`AddTimer` 返回 `ulong` 句柄。返回 `0` 表示创建失败（回调为空、`time` 非有限值、服务已销毁或没有空闲槽位），不要拿它继续操作。
 
-## 循环计时器
+## 核心用法：一次性与循环
 
 ```csharp
-using AlicizaX;
-using AlicizaX.Timer.Runtime;
-using UnityEngine;
+// 一次性：time 秒后执行一次，然后句柄自动失效
+ulong once = timer.AddTimer(OnTimeout, 5f);
 
-public sealed class TimerLoopExample : MonoBehaviour
-{
-    private ITimerService _timer;
-    private ulong _heartbeatTimer;
+// 循环：每隔 time 秒执行一次，直到 RemoveTimer
+ulong loop = timer.AddTimer(OnHeartbeat, 1f, isLoop: true);
 
-    private void OnEnable()
-    {
-        _timer = AppServices.Require<ITimerService>();
-        _heartbeatTimer = _timer.AddTimer(OnHeartbeat, 1f, isLoop: true);
-    }
-
-    private void OnDisable()
-    {
-        _timer?.RemoveTimer(_heartbeatTimer);
-        _heartbeatTimer = 0UL;
-    }
-
-    private void OnHeartbeat()
-    {
-        Debug.Log("Heartbeat.");
-    }
-}
+// 循环 + 不受 timeScale 影响
+ulong realtimeLoop = timer.AddTimer(OnPing, 1f, isLoop: true, isUnscaled: true);
 ```
 
-循环计时器会按创建时的间隔重复触发。对象销毁或逻辑结束时应调用 `RemoveTimer`。
+循环计时器按创建时的间隔重复；如果某一轮被长时间卡住，多出来的周期会被合并，不会连发补偿。
 
-## 传递引用参数
-
-Timer 提供泛型重载，可以给回调传入一个引用类型参数。
+## 核心用法：取消、暂停、恢复、重启
 
 ```csharp
-using System;
-using AlicizaX;
-using AlicizaX.Timer.Runtime;
-using UnityEngine;
-
-public sealed class TimerArgExample : MonoBehaviour
-{
-    private sealed class RewardContext
-    {
-        public int PlayerId;
-        public int Gold;
-    }
-
-    private ulong _timerHandle;
-
-    private void Start()
-    {
-        var context = new RewardContext
-        {
-            PlayerId = 1001,
-            Gold = 500
-        };
-
-        ITimerService timer = AppServices.Require<ITimerService>();
-        _timerHandle = timer.AddTimer<RewardContext>(GiveReward, context, 3f);
-    }
-
-    private static void GiveReward(RewardContext context)
-    {
-        Debug.Log($"Give {context.Gold} gold to player {context.PlayerId}.");
-    }
-}
-```
-
-泛型参数约束为 `where T : class`，不能直接传 `int`、`float` 等值类型。如果需要传多个值，建议定义上下文类。
-
-## 暂停、恢复、重启
-
-```csharp
-ITimerService timer = AppServices.Require<ITimerService>();
-
 ulong handle = timer.AddTimer(OnTimeout, 10f);
 
-// 暂停，剩余时间会被记录。
-timer.Stop(handle);
-
-float leftTime = timer.GetLeftTime(handle);
-
-// 从剩余时间继续。
-timer.Resume(handle);
-
-// 从原始 duration 重新开始。
-timer.Restart(handle);
-
+timer.Stop(handle);            // 暂停：剩余时间被记住
+float left = timer.GetLeftTime(handle);
+timer.Resume(handle);          // 从剩余时间继续
+timer.Restart(handle);         // 回到完整时长并重新开始
 bool running = timer.IsRunning(handle);
+timer.RemoveTimer(handle);     // 彻底释放槽位
 ```
 
-`Stop` 只是暂停计时器，不会移除计时器。彻底移除请调用 `RemoveTimer`。
+- `Stop` 是暂停，不是销毁；循环计时器暂停后，剩余时间记为完整时长。
+- `Resume` 对已在运行的句柄是空操作。
+- `Restart` 对一次性计时器等价于"重新计时"，句柄保持不变，可以在自己的回调里调用它来延长时间。
+- `RemoveTimer` 之后句柄失效，再 `Stop`/`Resume`/`IsRunning` 都是安全空操作（`IsRunning` 返回 `false`，`GetLeftTime` 返回 `0`）。
+- 槽位会复用，但句柄带版本号，旧句柄不会误伤同槽位的新计时器。
 
-## 使用不受 Time.timeScale 影响的计时器
+## 核心用法：与时间缩放解耦
 
-默认计时器使用 Unity 缩放时间。暂停游戏或修改 `Time.timeScale` 时，如果仍希望计时器继续推进，可以设置 `isUnscaled: true`。
+默认计时器使用 `Time.timeAsDouble`，会被 `Time.timeScale` 影响；`isUnscaled: true` 改用 `Time.unscaledTimeAsDouble`。
 
 ```csharp
-using AlicizaX;
+GameApp.Base.PauseGame();       // Time.timeScale = 0
+
+ulong paused = timer.AddTimer(OnResumeTip, 5f);                    // 暂停期间不推进
+ulong network = timer.AddTimer(OnReconnectTimeout, 5f, isUnscaled: true); // 照常推进
+
+GameApp.Base.ResumeGame();
+```
+
+`timeScale = 0` 时，scaled 计时器的 `GetLeftTime` 会保持在暂停前的剩余值；恢复后从该值继续。整帧卡顿（例如长时间 GC）后，过期的计时器在下一次 tick 触发一次，不会按错过的周期补发。
+
+## 核心用法：向回调传参
+
+三种重载，按分配需求选。先定义参数类型与结构体回调：
+
+```csharp
 using AlicizaX.Timer.Runtime;
 
-ITimerService timer = AppServices.Require<ITimerService>();
+public sealed class RewardContext
+{
+    public int PlayerId;
+}
 
-ulong handle = timer.AddTimer(
-    callback: OnRealTimeTimeout,
-    time: 5f,
-    isLoop: false,
-    isUnscaled: true);
+// 结构体回调：调用点不会创建委托
+public readonly struct RewardToast : ITimerCallback<RewardContext>
+{
+    public void Invoke(RewardContext context) { /* ... */ }
+}
 ```
+
+调用侧：
+
+```csharp
+timer.AddTimer(OnReward, 2f);                                          // 无参
+timer.AddTimer<RewardContext>(GiveReward, context, 3f);                // 引用类型参数
+timer.AddTimer<RewardToast, RewardContext>(context, 3f);               // 结构体回调
+```
+
+`AddTimer<T>` 的委托由框架按 `T` 缓存，调用本身不分配；但如果传的是捕获外部变量的 lambda，闭包对象仍由调用方分配。`AddTimer<T>` 的 `T` 必须是 `class`（引用类型），不能直接传 `int`、`float`；要传多个字段就定义一个上下文类。
 
 ## 容量与统计
 
-`TimerComponent` Inspector 里的 `Initial Capacity` 决定时间轮初始容量（默认 1024），容量不足时框架会自动扩容，空闲后可以主动回收。
+计时器槽位按页分配（每页 256 个），不够时自动加页，上限 4096 页（约 104 万槽位）。大量计时器被移除后调用 `TrimExcess()` 回收尾部空页；包含正在执行回调的页会被保留。
+
+每个时钟（scaled / unscaled）每帧最多执行 256 个到期回调，超出的留到下一帧，游标停在本帧未处理完的位置。
+
+统计接口不是注册契约，只能从服务实例做接口转换：
 
 ```csharp
-using AlicizaX;
 using AlicizaX.Timer.Runtime;
-using UnityEngine;
 
-ITimerService timer = AppServices.Require<ITimerService>();
-
-timer.GetStatistics(out int active, out int capacity, out int peak, out int free);
-Debug.Log($"active={active}, capacity={capacity}, peak={peak}, free={free}");
-
-timer.TrimExcess();  // 回收空闲页；正在派发计时器时调用会被忽略
-```
-
-大量创建计时器前，把 `Initial Capacity` 调大可以减少运行时扩容。
-
-## 调试信息
-
-Timer 服务实现了 `ITimerDebugService`，可在运行时读取活跃计时器和统计信息。
-
-```csharp
-using AlicizaX;
-using AlicizaX.Timer.Runtime;
-using UnityEngine;
-
-public sealed class TimerDebugExample : MonoBehaviour
+if (timer is ITimerDebugService debug)
 {
-    private readonly TimerDebugInfo[] _buffer = new TimerDebugInfo[32];
-
-    private void Update()
-    {
-        ITimerService timer = AppServices.Require<ITimerService>();
-        if (timer is not ITimerDebugService debugService)
-        {
-            return;
-        }
-
-        debugService.GetStatistics(out int activeCount, out int poolCapacity, out int peakActiveCount, out int freeCount);
-        Debug.Log($"Timer Active={activeCount}, Capacity={poolCapacity}, Peak={peakActiveCount}, Free={freeCount}");
-
-        int count = debugService.GetAllTimers(_buffer);
-        for (int i = 0; i < count; i++)
-        {
-            TimerDebugInfo info = _buffer[i];
-            Debug.Log($"Timer={info.TimerHandle}, Left={info.LeftTime:F2}, Duration={info.Duration:F2}");
-        }
-    }
+    debug.GetStatistics(out int active, out int capacity, out int peak, out int free);
+    debug.GetAllTimers(buffer);   // buffer 是 TimerDebugInfo[]，返回写入条数
+    timer.TrimExcess();
 }
 ```
+
+`TimerDebugInfo` 字段：`TimerHandle`、`LeftTime`、`Duration`、`Age`、`Flags`（`TimerDebugFlags.Running` / `Loop` / `Unscaled`）。
+
+## 编辑器 Inspector 调试
+
+选中挂了 `TimerComponent` 的节点，Play 模式下 Inspector 每 250ms 刷新一次：
+
+- `Runtime Debug`：Active Timers、Pool Capacity、Peak Active Count、Free Slots，以及 Active/Peak 使用率进度条。
+- `Active Timer Sample`：最多 32 条，显示 `ID`、`Loop/Once`、`Scaled/Unscaled`、`Running/Paused`、剩余时间与总时长。
+- `Stale One-shot Timers`：创建超过 300 秒仍未触发的一次性计时器，用来发现忘记 `RemoveTimer` 的泄漏。
+
+非 Play 模式只显示 "Available during runtime only."。
+
+## 常见配置
+
+`TimerComponent` 没有序列化字段，全部行为由 `AddTimer` 参数决定：
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `time` | 必填 | 秒；小于等于 `1e-6` 时按 `1e-6` 处理 |
+| `isLoop` | `false` | 是否循环触发 |
+| `isUnscaled` | `false` | `true` 时用 `Time.unscaledTimeAsDouble` |
+| `callback` | 必填 | 为空时直接返回 `0` |
+
+## 容易踩的坑
+
+1. 只挂 `TimerComponent` 而场景里没有 `AppServiceRoot`，计时器不会推进；反过来没有 `TimerComponent` 则 `Require<ITimerService>()` 直接抛异常。
+2. `AddTimer` 返回 `0` 是失败信号，不要把它当有效句柄传入 `Stop`/`Resume`（虽然不会崩，但什么都不会发生）。
+3. 热路径每次传捕获 lambda 会产生闭包分配；需要严格控制分配时用 `ITimerCallback` 结构体重载或缓存委托。
+4. Timer 不感知 `UnityEngine.Object` 生命周期：场景对象销毁不会自动取消计时器，回调触发时参数里的对象可能已经 `== null`。离开场景或销毁对象前先 `RemoveTimer`。
+5. `GameApp.Base.PauseGame()` 会把 `timeScale` 置 0，所有 scaled 计时器一起冻结；UI 超时、重连倒计时这类必须在暂停时继续走的逻辑要加 `isUnscaled: true`。
+6. 集中到期时会受每帧 256 个回调的预算限制，实际触发时间可能晚几帧；不要把计时器当逐帧时钟用。
 
 ## API 速查
 
 ```csharp
 ulong AddTimer(TimerHandlerNoArgs callback, float time, bool isLoop = false, bool isUnscaled = false);
 ulong AddTimer<T>(Action<T> callback, T arg, float time, bool isLoop = false, bool isUnscaled = false) where T : class;
+ulong AddTimer<TCallback, TArg>(TArg arg, float time, bool isLoop = false, bool isUnscaled = false)
+    where TCallback : struct, ITimerCallback<TArg> where TArg : class;
 
-void Stop(ulong timerHandle);
-void Resume(ulong timerHandle);
+void Stop(ulong timerHandle);          // 暂停
+void Resume(ulong timerHandle);        // 从剩余时间继续
+void Restart(ulong timerHandle);       // 回到完整时长重新开始
+void RemoveTimer(ulong timerHandle);   // 释放槽位
 bool IsRunning(ulong timerHandle);
 float GetLeftTime(ulong timerHandle);
-void Restart(ulong timerHandle);
-void RemoveTimer(ulong timerHandle);
+void TrimExcess();                     // 回收尾部空页
+
+// ITimerDebugService
+int GetAllTimers(TimerDebugInfo[] results);
+void GetStatistics(out int activeCount, out int poolCapacity, out int peakActiveCount, out int freeCount);
 ```
 
-## 注意事项
-
-- `AddTimer` 返回 `0UL` 表示创建失败，例如回调为空或内部槽位不可用。
-- `Stop` 是暂停，不是销毁。对象生命周期结束时优先调用 `RemoveTimer`。
-- 不要把场景对象长期捕获在全局 Timer 回调里，场景切换或对象销毁时要移除计时器。
-- 需要忽略游戏暂停时使用 `isUnscaled: true`。
-- 回调内部可以移除当前计时器，Timer 服务会处理执行中释放的情况。
+相关页面：[Service 服务容器](../service/index.md)、[UI 模块](../ui/index.md)。

@@ -1,71 +1,133 @@
-# Event 模块
+# Event 事件
 
-`EventBus` 是唯一公开门面，仅支持主线程同步调用。每个监听单独捕获异常并用 `UnityEngine.Debug.LogException` 记录，随后继续派发；调用方仍负责订阅的生命周期。
+Event 是进程内的同步事件总线：订阅返回一个 `EventRuntimeHandle`，`Publish` 时按订阅顺序同步调用，单个监听抛异常不影响其余监听。事件类型必须是 `struct`，并实现 `IEmptyEventArgs`（无参）或 `IPayloadEventArgs`（带参）中的一个。
 
-## 定义和使用
+边界：没有跨线程保护、没有延迟/排队派发、不绑定 `UnityEngine.Object` 生命周期——取消订阅必须由持有句柄的一方显式完成。
+
+源码位置：
+
+- `Client/Packages/com.alicizax.unity.framework/Runtime/Modules/Event`
+- `Client/Packages/com.alicizax.unity.framework/Editor/Modules/Event/EventMonitorWindow.cs`
+- `Client/Packages/com.alicizax.unity.framework/Runtime/Modules/UI/EventListenerProxy.cs`
+
+## 适用场景
+
+模块之间解耦：玩家数据变化后刷新多个界面、下载进度广播给进度条、设置项变更通知音量和语言。也适合"一次通知多个互不相识的监听者"的场合。
+
+不适合跨线程通信、需要持久化或重放的事件流，以及必须在某个确定帧之后才投递的延迟消息（用 Timer 自己排程）。
+
+## 使用前提
+
+- 不需要挂任何组件，也没有初始化步骤：`EventContainer<TEvent, THandler>` 是静态泛型容器，第一次访问某个事件类型时才创建内部 `EventChannel`。
+- 事件类型必须是 `struct`，并且只实现一种标记接口。两个接口都实现会同时匹配两个 `Subscribe` 重载，调用点无法确定派发模式。
+- 订阅和派发都在主线程完成，源码里没有任何锁；不要从子线程 `Publish`。
+- `Publish` 是同步的：订阅者里的耗时逻辑会直接算在发布者的调用栈上。
+
+## 最短接入
+
+1. 定义事件结构体。
+2. 在 `OnEnable`/`OnInitialize` 里订阅并保存句柄。
+3. 在合适的位置 `Publish`。
+4. 在 `OnDisable`/`OnDestroy` 里 `Dispose` 句柄。
 
 ```csharp
+using AlicizaX;
+
+// 无参事件
 public readonly struct InventoryChangedEvent : IEmptyEventArgs { }
 
-[Prewarm(16)]
+// 带参事件
 public readonly struct PlayerLevelUpEvent : IPayloadEventArgs
 {
     public readonly int PlayerId;
     public readonly int NewLevel;
-    public PlayerLevelUpEvent(int playerId, int level)
+
+    public PlayerLevelUpEvent(int playerId, int newLevel)
     {
         PlayerId = playerId;
-        NewLevel = level;
+        NewLevel = newLevel;
     }
 }
 
-private EventRuntimeHandle _inventory;
-private EventRuntimeHandle _level;
-
-private void OnEnable()
+public sealed class LevelPresenter : UnityEngine.MonoBehaviour
 {
-    _inventory = EventBus.Subscribe<InventoryChangedEvent>(OnInventoryChanged);
-    _level = EventBus.Subscribe<PlayerLevelUpEvent>(OnLevelUp);
-}
+    private EventRuntimeHandle _inventory;
+    private EventRuntimeHandle _levelUp;
 
-private void OnDisable()
-{
-    _inventory.Dispose();
-    _level.Dispose();
-}
+    private void OnEnable()
+    {
+        _inventory = EventBus.Subscribe<InventoryChangedEvent>(RefreshInventory);
+        _levelUp = EventBus.Subscribe<PlayerLevelUpEvent>(OnLevelUp);
+    }
 
-private void OnInventoryChanged() { RefreshInventory(); }
-private void OnLevelUp(in PlayerLevelUpEvent e) { ShowLevel(e.NewLevel); }
+    private void OnDisable()
+    {
+        _inventory.Dispose();
+        _levelUp.Dispose();
+    }
 
-private void Notify()
-{
-    EventBus.Publish<InventoryChangedEvent>();
-    var payload = new PlayerLevelUpEvent(1001, 10);
-    EventBus.Publish(in payload);
+    private void RefreshInventory() { /* 刷新背包 */ }
+
+    private void OnLevelUp(in PlayerLevelUpEvent evt) { /* 播放升级表现 */ }
 }
 ```
 
-事件必须为结构体，并且恰好实现一种标记接口。空事件不能含实例字段（包括自动属性的后备字段）。Source Generator 提供编译期诊断；绕过生成器的程序集在容器首次初始化时仍会被拒绝。空事件只能使用 `Action` 和无参 `Publish<T>()`；带参事件使用 `InEventHandler<T>` 和 `Publish(in T)`。
+派发：
 
-传入单个方法的委托是调用前置条件，不支持组合后的 multicast delegate。相同事件类型、相同目标和相同方法只能订阅一次；重复申请逐次记录 Warning 并返回默认句柄。不同实例的相同方法可以各自订阅。Dispose 后可立即重新申请；若正在派发，新申请仍需等待提交。
+```csharp
+EventBus.Publish<InventoryChangedEvent>();
 
-## 派发和变更时序
+var evt = new PlayerLevelUpEvent(1001, 10);
+EventBus.Publish(in evt);
+```
 
-| 操作 | 当前派发中的效果 | 物理账本提交 |
+## 核心用法：无参与带参事件
+
+| 事件接口 | 订阅签名 | 派发签名 |
 | --- | --- | --- |
-| Subscribe | 立即返回预留句柄；新监听不参与当前或同类型嵌套发布 | 当前事件最外层发布返回后按 pending 顺序加入 packed |
-| Dispose | 立即取消后续调用，也影响同类型嵌套发布 | 延后 swap-remove 和槽位回收 |
-| Clear | 已存在且未 Dispose 的监听继续当前及嵌套派发；逻辑订阅索引立即清空 | 按 pending 顺序清空；之后排队的订阅可重新建立 |
-| ReserveCapacity | 容量请求排队；Subscribe 必要时仍可扩展预留槽位 | 不在派发中替换 packed 数组 |
-| SubscriberCount | 返回已提交的 packed 数量，可能包含等待删除的监听 | 最外层结束后收敛 |
+| `IEmptyEventArgs` | `Subscribe<T>(Action handler)` | `Publish<T>()` |
+| `IPayloadEventArgs` | `Subscribe<T>(InEventHandler<T> handler)` | `Publish<T>(in T payload)` |
 
-深度按事件类型维护。A→B 中 B 返回即可提交 B 的变更；A→B→A 中 A 的变更必须等最外层 A 返回。每轮按开始时的 packed 顺序调用，已取消的监听跳过；swap-remove 可以改变下一轮顺序。
+`InEventHandler<T>` 的声明是 `delegate void InEventHandler<T>(in T evt)`，所以带参回调也必须写 `in`：
 
-退订将对应待调用回调置为 null，发布循环在每次调用前读取它；槽位、packed 顺序和数量直到 pending 提交才改变。槽位中的原始委托仍保留到回收，用于订阅索引所有权和诊断查询。Clear 不设置这些取消标记，因此不会打断已开始的派发。
+```csharp
+private void OnLevelUp(in PlayerLevelUpEvent evt)
+{
+    Debug.Log($"{evt.PlayerId} -> Lv.{evt.NewLevel}");
+}
+```
 
-Clear 不重置类型注册、容量或版本序列。默认、过期、重复释放及无效 typeId/槽位/版本的句柄不会改变订阅账本。不承诺防御反射篡改为其他合法 typeId 的伪造句柄。类型注册表在当前程序集域生命周期内只增不减。
+带参数据从 `Publish` 到回调全程按 `in` 传递，不装箱；但业务若访问非 readonly 结构体的成员，C# 会做防御性拷贝，所以事件结构体建议全部字段 `readonly`。
 
-## 容量和清理
+## 核心用法：句柄与取消订阅
+
+`EventRuntimeHandle` 是只读结构体，内部记录频道、槽位与版本号：
+
+```csharp
+EventRuntimeHandle handle = EventBus.Subscribe<InventoryChangedEvent>(RefreshInventory);
+handle.Dispose();   // 取消这一个订阅
+
+default(EventRuntimeHandle).Dispose();   // 空句柄，安全空操作
+```
+
+- 槽位会被复用，但句柄比较版本号，旧句柄不会误删同槽位的新订阅。
+- `Dispose` 幂等，重复调用无害。
+- 同一事件、同一目标、同一方法只能订阅一次：重复订阅会打印 `Duplicate event handler subscription: ...` 警告并返回 `default` 句柄，原订阅仍然有效。
+
+## 核心用法：派发期间的时序
+
+`Publish` 开始时对订阅数拍快照，之后逐个读取槽位，读到的已被取消项直接跳过：
+
+| 派发中的操作 | 效果 |
+| --- | --- |
+| `Dispose` 某个还没轮到的句柄 | 该监听本轮不再被调用 |
+| `ClearEmpty<T>()` / `ClearPayload<T>()` | 本轮剩余监听全部跳过，逻辑订阅立即清空 |
+| `Subscribe` 新监听 | 不参与当前这一轮，但会被同类型的嵌套 `Publish` 调用 |
+| 监听里抛异常 | `Debug.LogException` 记录后继续调用后面的监听 |
+
+最外层 `Publish` 返回时才压缩空洞、恢复紧凑数组，所以"发布过程中取消"不会打乱仍在派发的顺序。
+
+## 核心用法：容量与清理
 
 ```csharp
 EventBus.ReserveEmptyCapacity<InventoryChangedEvent>(16);
@@ -78,34 +140,90 @@ EventBus.ClearEmpty<InventoryChangedEvent>();
 EventBus.ClearPayload<PlayerLevelUpEvent>();
 ```
 
-容量只扩不缩，负数被拒绝，0 不会缩小已有存储。默认初始容量为 4。`[Prewarm(n)]` 生成的入口设置 `EventInitialSize<T>.Size` 并调用对应 Reserve API，真实分配存储；容器已经初始化时也可补足容量。直接修改 `EventInitialSize<T>.Size` 只影响尚未初始化的容器。
+初始容量 4，数组满时按倍数扩容；`Reserve*` 只能扩容，传负数抛 `ArgumentOutOfRangeException`。`Clear*` 只清订阅，不销毁频道、不回收容量、不重置类型。
 
-自动增长按倍数扩容，Editor 记录诊断警告，Player 不记录扩容警告。监听异常日志与异常隔离不受 `ENABLE_EXCEPTION_LOG` 或 Editor 诊断开关影响。
+内部结构：每个"事件类型 + 派发模式"组合对应一个 `EventContainer<TEvent, THandler>`，它持有 `EventChannel<THandler>`（紧凑委托数组 + 槽位版本表 + 去重集合 + 派发深度）。这些类型都是 internal，业务只能通过 `EventBus` 访问；频道列表另外供编辑器统计和进入 Play 模式时统一清空。
 
-稳定 Publish 为 O(N)，常规订阅和退订为期望/均摊 O(1)，扩容为 O(C)。Clear 为 O(N+C) 上界（含订阅索引清空），pending 提交为 O(P + 被 Clear 处理的监听数 + 扩容量)。稳定派发和容量充足时使用已缓存单方法委托的订阅/退订要求框架自身 0 B；调用方创建委托、类型首次初始化、数组/字典增长、重复拒绝和异常日志分别计量。
+## 核心用法：Unity 对象与 UI 自动解绑
 
-带参数据在 Publish 到回调之间按 `in T` 传递，pending 和 Debug 不保存 payload。业务访问非 readonly 结构体成员仍可能触发 C# 防御性拷贝，推荐不可变 payload。
+总线不感知 Unity 生命周期：对象被销毁后订阅仍在，`Publish` 时访问已销毁对象会抛异常（被逐监听隔离并记录），句柄只有 `Dispose` 才真正移除。
 
-## Unity 和 UI 所有权
+UI 视图不需要手写这套逻辑：`UIBase` 暴露 `protected EventListenerProxy EventProxy`，`AddUIEvent<T>` 会登记订阅，视图禁用时统一 `Suspend`、启用时 `Resume`，销毁归还内存池时 `Clear` 并释放全部句柄：
 
-Disable、Destroy 本身不会让总线自动退订。委托仍持有托管目标；访问已销毁 Unity 对象可能抛出异常，后续监听仍继续执行，残留订阅仍能从账本和监视器观察到。订阅者应在适当的 OnDisable、OnDestroy 或池归还流程中 Dispose。
+```csharp
+// 在 UIBase 派生类（窗口或 Widget）里
+protected override void OnInitialize()
+{
+    EventProxy.AddUIEvent<PlayerDataChangedEvent>(OnPlayerDataChanged);
+}
 
-UI 的 `EventListenerProxy.AddUIEvent<T>` 统一调用 `EventBus.Subscribe`，由代理释放时逐一 Dispose 句柄；本次重构不改变 UI 的窗口生命周期。
+private void OnPlayerDataChanged(in PlayerDataChangedEvent evt) { /* 刷新货币显示 */ }
+```
 
-## 迁移
+详见 [UI 生命周期](../ui/lifecycle.md)。非 UI 的对象请自己在 `OnDisable`/`OnDestroy` 里 `Dispose`。
 
-| 已删除 API | 替代方式 |
-| --- | --- |
-| `SafePublisher.Publish` / `EventBus.SafePublish` | `EventBus.Publish`，默认逐监听隔离异常 |
-| 公开 `EmptyEventContainer<T>` / `EventContainer<T>` | 所有订阅、发布、计数和清理均经过 EventBus |
-| `EnsureEmptyCapacity<T>` | `ReserveEmptyCapacity<T>` |
-| `EnsurePayloadCapacity<T>` | `ReservePayloadCapacity<T>` |
-| 同目标同方法重复订阅 | 持有一个订阅句柄；需要独立所有权时使用不同监听实例 |
+## 编辑器：Event Monitor
 
-不保留旧名转发。运行时只有内部 `EventContainer<TEvent,THandler>`，两个 Publish 重载由生成器的一份模板生成，分别直接调用 `Action()` 和 `handler(in payload)`。
+菜单 `AlicizaX/Event Monitor` 打开"事件监视器"（`EventMonitorWindow`），仅编辑器可用：
 
-## Event Monitor
+- 左侧事件列表：订阅数、派发模式（无参 / in）、容量、发布次数、是否已初始化；支持搜索与"仅已初始化"过滤。
+- 右侧详情：订阅数、峰值、容量利用率、发布/订阅/取消/扩容/清空/回调异常计数、最后操作帧与时间。
+- 订阅者列表：声明类型、方法名、槽位、版本、目标类型、静态/实例；已销毁的 Unity 目标与 lambda/闭包会单独告警，可"定位目标"。
+- 告警与"快照对比"：拍摄快照后对比订阅数、发布次数、容量与订阅者集合的变化。
+- 最近操作：固定 128 条环形记录（订阅/取消/扩容/清空/回调异常）。
 
-`AlicizaX/Event Monitor` 显示统一发布数、订阅数、容量、异常数、pending/flush、订阅目标及销毁状态。移除了旧派发模式计数。详细历史为固定 128 条环形记录；查询详情会创建诊断数组，不属于业务 Publish 热路径。测试的诊断关闭模式只关闭统计与扩容警告，不能视为实跑 Release Player。
+统计只在窗口打开期间记录（`EventDebugRegistry.BeginRecording`/`EndRecording`），关掉窗口就没有开销。
 
-测试、性能数据及执行边界见重构验收记录；十万/三十万发布者、订阅和退订的耗时、分配及 GC 结果见大规模压力测试记录。
+## 常见配置
+
+事件系统没有 Inspector 字段，可调的只有容量与清理：
+
+| 项 | 默认值 | 说明 |
+| --- | --- | --- |
+| 初始容量 | 4 | 首次 `Subscribe` 时分配 |
+| 扩容策略 | ×2 | 数组满时翻倍，旧句柄保持有效 |
+| 预分配 | — | `ReserveEmptyCapacity<T>` / `ReservePayloadCapacity<T>` |
+| 操作历史 | 128 条 | 仅编辑器，环形覆盖 |
+| 统计记录 | 关闭 | 打开 Event Monitor 才开启 |
+
+## 容易踩的坑
+
+1. 事件类型必须是 `struct` 且只实现一种标记接口：泛型约束 `where T : struct, IEmptyEventArgs` 会挡下 class，两个接口都实现则重载解析失败。
+2. 重复订阅会返回 `default` 句柄，对它 `Dispose` 什么都不会发生——看起来取消了，实际订阅还在，很容易变成"回调执行两次"。
+3. 派发过程中新订阅的监听收不到当前这一轮，只会在下一次（或同类型嵌套 `Publish`）收到；不要在 `Publish` 前后假设订阅立即生效。
+4. 销毁 `GameObject` 不会自动退订。长期存活的静态字段里挂着的句柄必须显式 `Dispose`，否则每次重建都会多一份回调。
+5. `Publish` 是同步调用，订阅者里的加载、循环、等待全部压在发布者的栈上；重活请转成异步或在下一帧处理。
+6. 关闭 Domain Reload 进入 Play 时，`SubsystemRegistration` 阶段会清空所有频道；跨场景静态缓存里的句柄虽然 `Dispose` 安全，但已经收不到事件，需要在初始化时重新订阅。
+
+## API 速查
+
+```csharp
+// 订阅，返回可 Dispose 的句柄
+EventRuntimeHandle Subscribe<T>(Action handler) where T : struct, IEmptyEventArgs;
+EventRuntimeHandle Subscribe<T>(InEventHandler<T> handler) where T : struct, IPayloadEventArgs;
+
+// 派发
+void Publish<T>() where T : struct, IEmptyEventArgs;
+void Publish<T>(in T payload) where T : struct, IPayloadEventArgs;
+
+// 计数与容量
+int GetEmptySubscriberCount<T>() where T : struct, IEmptyEventArgs;
+int GetPayloadSubscriberCount<T>() where T : struct, IPayloadEventArgs;
+void ReserveEmptyCapacity<T>(int capacity) where T : struct, IEmptyEventArgs;
+void ReservePayloadCapacity<T>(int capacity) where T : struct, IPayloadEventArgs;
+
+// 清理
+void ClearEmpty<T>() where T : struct, IEmptyEventArgs;
+void ClearPayload<T>() where T : struct, IPayloadEventArgs;
+
+// 句柄
+void EventRuntimeHandle.Dispose();
+
+// UI 视图内（UIBase.EventProxy）
+void EventListenerProxy.AddUIEvent<T>(Action handler) where T : struct, IEmptyEventArgs;
+void EventListenerProxy.AddUIEvent<T>(InEventHandler<T> handler) where T : struct, IPayloadEventArgs;
+```
+
+性能说明：容量足够且委托被复用的情况下，稳定路径的订阅、派发、退订不产生托管分配（框架性能用例按 0 B 断言）；首次访问事件类型、扩容、重复订阅告警与异常日志会分配。
+
+相关页面：[UI 生命周期](../ui/lifecycle.md)、[Service 服务容器](../service/index.md)。

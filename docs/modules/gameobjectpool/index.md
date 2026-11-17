@@ -1,22 +1,23 @@
-# GameObjectPool 模块
+# GameObjectPool 实例池
 
-GameObjectPool 只池化 Unity `GameObject` 实例。资源系统管 Prefab 引用，池管 `Instantiate` / 回收 / 按策略销毁。
+GameObjectPool 只池化 Unity `GameObject` 实例：按 YooAsset location 命中规则、`Instantiate` Prefab、按策略回收与销毁。Prefab 的资源租约由资源模块持有；普通 C# 引用对象请用 [MemoryPool](../memorypool/index.md)。
 
-适合特效、掉落物、HUD 控件、通知条。不要把 FishNet `NetworkObject`、整窗 UI、纯 ECS 实体塞进来。
+源码：`Client/Packages/com.alicizax.unity.framework/Runtime/Modules/GameObjectPool`、`Client/Packages/com.alicizax.unity.framework/Editor/Modules/GameObjectPool`。
 
-源码：
+## 适用场景
 
-- `Client/Packages/com.alicizax.unity.framework/Runtime/Modules/GameObjectPool`
-- `Client/Packages/com.alicizax.unity.framework/Editor/Modules/GameObjectPool`
+- 高频生成/销毁的 Prefab：特效、弹道、掉落物、飘字、列表小控件。
+- 有明确容量上限、需要空闲回收策略的对象（战斗高峰期突增、战斗后回落）。
+- 希望复用预热实例、避免反复 `Instantiate` 的循环体。
+
+不适用：整窗 UI、`NetworkObject`、一次性物体（走 `GameApp.Resource.Instantiate`）、纯 C# 对象（走 `MemoryPool`）。
 
 ## 使用前提
 
-场景框架根节点需要：
-
-- `ResourceComponent`
-- `GameObjectPoolComponent`
-
-`GameObjectPoolComponent` 在 `Awake` 注册 `IGameObjectPoolService`。Prefab 源资产走内部 `IPrefabLoader`：`LoadLease<GameObject>` 持有租约，`UnloadPrefab` 成对 `Dispose`。**不会**走 `Instantiate`（那个 API 会给实例挂 `ResourceOwner`，和池生命周期冲突）。
+1. **挂载位置**：服务根 Prefab（模板 `Client/Packages/com.alicizax.unity.framework/Runtime/Prefabs/Entry.prefab`）下的 `GameObjectPool` 子节点挂 `GameObjectPoolComponent`（菜单 `Game Framework/GameObjectPool`）。该组件**没有任何 Inspector 字段**，`Awake` 里注册 `IGameObjectPoolService` 与 `IGameObjectPoolDebugService`，并把自身 `transform` 当作空闲实例容器根。
+2. **依赖资源模块**：同根节点必须有 `ResourceComponent`。`ResourceComponent` 是 `[DefaultExecutionOrder(-700)]`，`GameObjectPoolComponent` 无执行顺序（0），注册时 `OnInitialize` 立即 `Require<IResourceService>()`。
+3. **必须先加载目录**：组件不会自动读 PoolConfig，模板里也**没有内置 `GameObjectPoolConfig.asset`**。未加载目录时所有 `Spawn` / `LoadPrefab` 都返回 `null`，Editor 与 Development Build 下额外打 `[GameObjectPool] Location is not in PoolConfig`；Release 包静默返回 `null`。
+4. **获取服务**：
 
 ```csharp
 using AlicizaX;
@@ -24,219 +25,99 @@ using AlicizaX;
 IGameObjectPoolService pool = GameApp.GameObjectPool;
 ```
 
-启动时必须先加载目录，未登记的 location 一律拒绝进池：
+`GameApp.GameObjectPool` 是 `AppServices.Require<IGameObjectPoolService>()` 的静态缓存；服务未注册时抛 `InvalidOperationException`。
+
+## 最短接入
+
+1. 建配置资源：Project 窗口右键 `Create > AlicizaX > PoolConfig`（默认文件名 `GameObjectPoolConfig`）。
+2. 放进被 YooAsset 收集的目录，模板为 `Client/Assets/Bundles/Configs/sciptableObject/`（Collector `AddressByFileName`）→ location 就是**文件名去扩展名**。
+3. 资源包初始化完成后加载目录：
 
 ```csharp
 GameApp.GameObjectPool.LoadCatalog("GameObjectPoolConfig");
-// 或
-GameApp.GameObjectPool.LoadCatalog(configAsset);
+// 已经持有资产引用时也可以直接传资产
+// GameApp.GameObjectPool.LoadCatalog(configAsset);
 ```
 
-`LoadCatalog(string)` 的参数是 YooAsset location，不是磁盘路径。内部用 `LoadLease<PoolConfigScriptableObject>` 读配置，`BuildCatalog` 完立刻 `Dispose`，规则已编译进内存。
-
-## 公开接口
+4. 先把 Prefab 钉进内存，再同步生成：
 
 ```csharp
-GameObject Spawn(string location, Transform parent = null);
-T Spawn<T>(string location, Transform parent = null) where T : Component;
-
-UniTask<GameObject> SpawnAsync(string location, Transform parent = null, CancellationToken ct = default);
-UniTask<T> SpawnAsync<T>(string location, Transform parent = null, CancellationToken ct = default) where T : Component;
-
-GameObject LoadPrefab(string location);
-UniTask<GameObject> LoadPrefabAsync(string location, CancellationToken ct = default);
-
-UniTask WarmupAsync(string location, int count, CancellationToken ct = default);
-
-void Despawn(GameObject instance);
-void Despawn(GameObjectPoolHandle handle);
-
-void Flush(string location);
-void FlushGroup(string group);
-void FlushAll();
-
-void LoadCatalog(PoolConfigScriptableObject config);
-void LoadCatalog(string poolConfigPath);
-```
-
-| API | 会加载 Prefab | 会 Instantiate | 硬顶 / 未登记 |
-| --- | --- | --- | --- |
-| `Spawn` | 否 | 仅当 Prefab 已在内存且无 idle | `null` |
-| `SpawnAsync` | 会 | idle 或新建 | `null` |
-| `LoadPrefab*` | 会 | 否 | `null` |
-| `WarmupAsync` | 会 | 填 idle，分帧 | 停在 hard |
-
-同步 `Spawn` **不会** `LoadPrefab`，也不会转异步。Prefab 没在内存时直接 `null`；已加载且有 idle 则弹尾复用，没有 idle 则 `Instantiate` 直到 hard。要先钉住 Prefab 再同步出对象，调 `LoadPrefab` / `LoadPrefabAsync` / `WarmupAsync` / `SpawnAsync`。
-
-`LoadCatalog`（string 或资源引用）会重编目录并 **清掉当前所有运行时池**。硬顶不会排队。没有空闲实例且 `total == hard` 时，同步和异步都立刻 `null`。
-
-## 创建 PoolConfig
-
-```text
-Create > AlicizaX > PoolConfig
-```
-
-双击资源打开配置窗。推荐放到 YooAsset 已收集的配置目录，例如：
-
-```text
-Client/Assets/Bundles/Configs/sciptableObject/GameObjectPoolConfig.asset
-```
-
-默认包是 `AddressByFileName` 时，启动代码传：
-
-```text
-GameObjectPoolConfig
-```
-
-不要把 Windows 路径或 `Assets/...` 当 `LoadCatalog` 参数，除非 Collector 地址规则明确支持。
-
-模板里 `Assets/Bundles/Configs/sciptableObject/` 目录已存在，但 **没有内置 `GameObjectPoolConfig.asset`**，`Assets/Bundles/Entity` / `Effects` 也是空的。要自己建配置和 Prefab，再 `LoadCatalog`。
-
-Yoo 初始化后：
-
-```csharp
-GameApp.GameObjectPool.LoadCatalog("GameObjectPoolConfig");
-var fx = await GameApp.GameObjectPool.SpawnAsync("Explosion", transform);
-GameApp.GameObjectPool.Despawn(fx);
-```
-
-规则示例（数字仅供参考，不是工程里的现成配置）：
-
-| 规则 | pattern | group | policy | min-soft-hard | 用途 |
-| --- | --- | --- | --- | --- | --- |
-| Explosion (Burst) | `Explosion` | FX | Burst | 0-8-16 | 文件名地址的精确匹配 |
-| Effects (Burst glob) | `Effects/**` | FX | Burst | 0-16-64 | 路径型地址下的特效 |
-| HUD (Fixed) | `HUD*` | HUD | Fixed | 2-8-16 | 文件名以 HUD 开头的控件 |
-| Entity (Sticky) | `Entity/**` | Entity | Sticky | 0-4-8 | 路径型实体；文件名地址请写精确规则 |
-
-当前 Collector 是 `AddressByFileName`，`Explosion.prefab` 的请求必须是 `Explosion`，不会命中 `Effects/**` 或 `Entity/**`。
-
-## 规则字段
-
-每条 `PoolEntry` 对应一类 location：
-
-| 字段 | 说明 |
-| --- | --- |
-| `entryName` | 调试名 |
-| `group` | 空闲实例挂到 `[Group]` 节点。空值回落 `DefaultGroup` |
-| `assetPath` | YooAsset location 或 glob。不含通配符 = 精确匹配 |
-| `policy` | `Fixed` / `Burst` / `Sticky`，默认 `Burst` |
-| `minIdle` | 维护后至少保留的空闲数 |
-| `softCapacity` | 空闲修剪目标上限 |
-| `hardCapacity` | 总实例硬顶（含在场）。到达后 Spawn 返回 `null` |
-| `idleSeconds` | 仅 Burst：最老空闲超过该秒才剪 |
-| `unloadPrefab` | 池被剪空后是否 `Dispose` Prefab 源租约 |
-| `priority` | 配置窗拖拽顺序自动维护，越靠上越先匹配 |
-
-路径 Normalize：
-
-- 去空白、`\` 转 `/`、去掉尾部分隔符和扩展名
-- 去掉 `Assets/Bundles/` 或 `Assets/Bundle/` 前缀
-
-```text
-Assets/Bundles/Effects/Explosion.prefab  -> Effects/Explosion
-Explosion                                -> Explosion
-Effects/**                               -> 递归匹配 Effects 下所有 location
-```
-
-请求 location 也走同一套 Normalize。规则写成 `Effects/Explosion` 时，业务应请求 `Effects/Explosion`，或请求能 Normalize 成同一字符串的路径。当前项目若 Collector 用文件名地址，规则和请求都写 `Explosion`。
-
-## 策略
-
-| Policy | 行为 |
-| --- | --- |
-| **Fixed** | 可涨到 hard。空闲数超过 `retain` 就立刻剪空闲；`retain = clamp(minIdle, 0, soft)`。在场对象不剪。适合 HUD |
-| **Burst** | 可涨到 hard。`total > soft` 时立刻剪空闲；未超 soft 时最老空闲超过 `idleSeconds` 再剪。适合特效 / 弹体 |
-| **Sticky** | 只涨不自动剪，等 `Flush` 或 `Application.lowMemory`。适合关卡常驻 |
-
-`minIdle` 只约束空闲实例数量，在场实例不计入。维护计时统一使用 `Time.unscaledTime`，`Time.timeScale = 0` 不会冻结 Burst 的空闲回收。
-
-`Flush` / 低内存：所有策略（含 Sticky）按 `minIdle` 剪空闲；剪空后若 `unloadPrefab` 为真则释放 Prefab 源租约（进入资源模块 Idle TTL，不是立刻从内存抠掉）。普通 Tick 不会动 Sticky。每次维护有剪裁预算（约 `soft/4`，封顶 16；低内存 16），不一定一帧剪完。
-
-## 请求
-
-```csharp
-using AlicizaX;
-using Cysharp.Threading.Tasks;
-using UnityEngine;
-
-public sealed class ExplosionSpawner : MonoBehaviour
+GameObject prefab = GameApp.GameObjectPool.LoadPrefab("Effects/Hit");   // 只钉 Prefab，不建实例
+// 或 GameObject prefab = await GameApp.GameObjectPool.LoadPrefabAsync("Effects/Hit");
+if (prefab == null)
 {
-    public GameObject Spawn(Vector3 position)
-    {
-        GameObject instance = GameApp.GameObjectPool.Spawn("Explosion", transform);
-        if (instance == null)
-        {
-            return null;
-        }
+    return;
+}
 
-        instance.transform.position = position;
-        return instance;
-    }
+GameObject instance = GameApp.GameObjectPool.Spawn("Effects/Hit", transform); // parent 可省
+GameApp.GameObjectPool.Despawn(instance);
+```
 
-    public async UniTask<GameObject> SpawnAsync(Vector3 position)
-    {
-        GameObject instance = await GameApp.GameObjectPool.SpawnAsync("Explosion", transform);
-        if (instance == null)
-        {
-            return null;
-        }
+5. 回收一律走 `Despawn`，不要对池实例调 `Destroy`。
 
-        instance.transform.position = position;
-        return instance;
-    }
+## 核心用法
 
-    public void Recycle(GameObject instance)
-    {
-        GameApp.GameObjectPool.Despawn(instance);
-    }
+### 生成：谁加载 Prefab
+
+| 方法 | 加载 Prefab | 建实例 | Prefab 未加载时 | 满 `hardCapacity` 时 |
+| --- | --- | --- | --- | --- |
+| `Spawn(location, parent)` | 否 | 有空闲弹尾，否则新建 | 返回 `null` | 返回 `null` + `HardCapacity reached` 警告 |
+| `Spawn<T>(location, parent)` | 否 | 同上 | `null` | `null` |
+| `SpawnAsync(location, parent, ct)` | 是 | 先 `LoadPrefabAsync` 再 `Spawn` | 不适用 | `null` |
+| `LoadPrefab` / `LoadPrefabAsync` | 是 | 否 | — | — |
+| `WarmupAsync(location, count, ct)` | 是 | 只造空闲 | — | 停在 hard |
+
+```csharp
+GameObject fx = GameApp.GameObjectPool.Spawn("Effects/Hit", transform);
+if (fx == null)
+{
+    fx = await GameApp.GameObjectPool.SpawnAsync("Effects/Hit", transform);
 }
 ```
 
-热路径（命中）：`location` 精确表 -> 弹 idle 尾 -> `SetParent` -> 未激活才 `SetActive(true)` -> `OnSpawn`。创建时扫一次 `IGameObjectPoolable`，之后只用缓存。
+- 同步 `Spawn` 不会把失败的同步请求转异步；也不会加入进行中的异步加载（`LoadPrefabAsync` 未完成时 `LoadPrefab` 返回 `null`）。
+- `Spawn<T>` 只做**根节点** `GetComponent<T>()`，子节点上的组件取不到——取不到会先 `Despawn` 再返回 `null`。
+- `WarmupAsync` 数量夹在 `[0, hardCapacity]`，每帧最多 8 个或 1ms 就让出；取消后已造的实例留在空闲列表。
 
-`Despawn` 找 `GameObjectPoolHandle` 并回池。以下调用都是业务错误，直接抛 `InvalidOperationException`，不会销毁对象，也不会改动池账本：
+### 回收：`Despawn` 与句柄
 
-- 对象上没有 `GameObjectPoolHandle`（不是池实例）
-- 对象已经回池（重复 `Despawn`）
-- 所属池已被 `LoadCatalog` / 服务关闭释放
-
-外部 `Destroy` 池对象会经 `OnDestroy` 摘槽，Editor / Development Build 下打印警告。不要自己 `Destroy` 池对象。
-
-回调异常：
-
-- `OnSpawn` 抛异常：实例回滚为空闲状态并失活（显隐接管的实例也一样，下次 `Spawn` 重新激活），异常继续抛给调用方。
-- `OnDespawn` 抛异常：实例保持在场，异常继续抛给调用方，修复后可再次 `Despawn`。
-- `OnPooledDestroy` 抛异常：记录日志后继续销毁，保证维护和关闭流程完成。
-
-## 预热
+池在实例上自动 `AddComponent<GameObjectPoolHandle>()`（`[DisallowMultipleComponent]`），两种 `Despawn` 等价：
 
 ```csharp
-await GameApp.GameObjectPool.WarmupAsync("Explosion", 10);
+var handle = instance.GetComponent<GameObjectPoolHandle>();
+GameApp.GameObjectPool.Despawn(handle);   // 与 Despawn(instance) 同一条路径
 ```
 
-先异步钉 Prefab，再分帧造空闲实例（每帧约 8 个或 1ms）。数量卡在 `hardCapacity`。取消即停，已造的留在 idle。
+业务错误直接抛 `InvalidOperationException`，**不销毁对象、不改动池账本**：
 
-只想钉 Prefab、不造实例：
+- 对象上没有 `GameObjectPoolHandle`：`... is not a pooled instance`。
+- 已回池（重复归还）：`... is not spawned`。
+- 所属池已被新的 `LoadCatalog` 释放：`... no longer belongs to a pool`。
+
+池外 `Destroy` 会经 `GameObjectPoolHandle.OnDestroy` 摘槽，Editor 与 Development Build 下打印 `destroyed outside pool` 警告；槽位会被下一个实例复用。
+
+### 清理：`Flush` 系列
 
 ```csharp
-await GameApp.GameObjectPool.LoadPrefabAsync("Explosion");
+GameApp.GameObjectPool.Flush("Effects/Hit");
+GameApp.GameObjectPool.FlushGroup("FX");   // 空/空白参数回落 DefaultGroup
+GameApp.GameObjectPool.FlushAll();
 ```
 
-之后同步 `Spawn` 才能命中。
+- 三者都走**低内存计划**：任何策略（含 `Sticky`）都按 `minIdle` 剪空闲，**绝不销毁在场实例**。
+- 每次维护有剪裁预算：约 `softCapacity >> 2`，夹在 `1..16`；低内存时固定 16。所以一次 `Flush` 可能要多帧才剪完。
+- `Application.lowMemory` 会对所有池执行一次低内存维护。
+- 池被剪空且 `unloadPrefab = true` 时释放 Prefab 源租约（交给资源模块的 Idle 回收，不是立刻从内存抠掉）。
 
-## 生命周期
-
-重置写在 Prefab 自己身上。池不帮你清 Trail、不停粒子、不扫丢失引用。
+### 池化回调：`IGameObjectPoolable`
 
 ```csharp
 using AlicizaX;
 using UnityEngine;
 
-public sealed class PooledMuzzleFlash : MonoBehaviour, IGameObjectPoolable
+public sealed class PooledMuzzle : MonoBehaviour, IGameObjectPoolable
 {
-    [SerializeField] ParticleSystem _fx;
-    [SerializeField] TrailRenderer _trail;
+    [SerializeField] private ParticleSystem _fx;
 
     public void OnSpawn(in PoolSpawnContext context)
     {
@@ -247,7 +128,6 @@ public sealed class PooledMuzzleFlash : MonoBehaviour, IGameObjectPoolable
     public void OnDespawn()
     {
         _fx.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-        _trail.Clear();
     }
 
     public void OnPooledDestroy()
@@ -256,103 +136,105 @@ public sealed class PooledMuzzleFlash : MonoBehaviour, IGameObjectPoolable
 }
 ```
 
-`PoolSpawnContext`：`Location`、`Group`、`Parent`、`SpawnFrame`。
+- 实例创建时用 `GetComponentsInChildren(true, ...)` 收集**一次**并缓存，含未激活子节点。
+- `PoolSpawnContext`：`Location`、`Group`、`Parent`、`SpawnFrame`（`Time.frameCount`）。
+- **显隐接管**：根节点上存在任意 `IGameObjectPoolable` 时，池不再替它 `SetActive(false)`，`OnDespawn` 后实例保持激活；子节点上的实现只收回调，不改变显隐方式。
+- 新建与预热出来的实例初始失活，第一次 `Spawn` 激活一次。
+- 异常语义：`OnSpawn` 抛 → 回滚为空闲并失活，异常继续抛给调用方；`OnDespawn` 抛 → 实例留在场，修复后可再次 `Despawn`；`OnPooledDestroy` 抛 → 记日志后继续销毁，维护与关闭流程不中断。
 
-一个 Prefab 可以挂多个接口，父子节点（含隐藏子节点）上的都会收到回调。没有接口 = 只做显隐和挂接。
+### 规则匹配：`PoolEntry` 与 glob
 
-### 显隐接管
+- 先查精确表，再按 glob 列表匹配；glob 列表顺序由 `priority` 降序、`assetPath` 长度降序、`group` 升序决定。
+- glob 语法：`*` 匹配单段，`**` 递归匹配 0 到多段（连续 `**` 会折叠），`?` 匹配单字符；首次 glob 命中的结果会写回精确表。
+- `PoolEntry.NormalizeLocation`：去首尾空白、`\` 转 `/`、去尾部 `/`、去扩展名、去 `Assets/Bundles/` 或 `Assets/Bundle/` 前缀。规则与请求都走同一套归一化。
+- `assetPath` 为空的条目、`null` 条目会被跳过；字面规则重复时，精确表只记住排序后的第一条（`priority` 高者优先）。
+- `LoadCatalog` 会 `Shutdown` 并清空**全部**运行时池（含 `[Group]` 容器节点），然后按新目录重建。
 
-根节点上有实现 `IGameObjectPoolable` 的组件，池就不再替它失活：
-
-| | 池管（根节点无接口） | 接管（根节点有接口） |
-|---|---|---|
-| `Despawn` | `OnDespawn` -> `SetActive(false)` -> 挂回池根 | `OnDespawn` -> 挂回池根，保持激活 |
-| `Spawn` | 挂到目标父节点 -> `SetActive(true)` -> `OnSpawn` | 挂到目标父节点 -> `OnSpawn`（仅首次或回滚后才 `SetActive(true)`） |
-
-- 只看根节点。子节点上的接口只收回调，不改变显隐方式，粒子子节点只想重置自己时挂在子节点上。
-- 接管后隐藏、显示全写在 `OnDespawn` / `OnSpawn`：移出视野、关 Renderer / Collider / 粒子 / Animator / 音效、刚体休眠等，池不认识具体组件。
-- 新建与预热出来的实例仍是失活的，第一次 `Spawn` 激活一次，之后不再切换，`OnEnable` / `OnDisable` 不会随取还触发。
-- 挂回池根照旧保留：业务父节点销毁时不会连带销毁池里的实例。
+### 自定义 `IPrefabLoader`（可选依赖）
 
 ```csharp
-public sealed class PooledBullet : MonoBehaviour, IGameObjectPoolable
+public interface IPrefabLoader
 {
-    [SerializeField] Renderer[] _renderers;
-    [SerializeField] Collider[] _colliders;
-    static readonly Vector3 Parked = new Vector3(0f, -100000f, 0f);
-
-    public void OnSpawn(in PoolSpawnContext context)
-    {
-        for (int i = 0; i < _renderers.Length; i++) _renderers[i].enabled = true;
-        for (int i = 0; i < _colliders.Length; i++) _colliders[i].enabled = true;
-    }
-
-    public void OnDespawn()
-    {
-        for (int i = 0; i < _renderers.Length; i++) _renderers[i].enabled = false;
-        for (int i = 0; i < _colliders.Length; i++) _colliders[i].enabled = false;
-        transform.localPosition = Parked;
-    }
-
-    public void OnPooledDestroy()
-    {
-    }
+    GameObject LoadPrefab(string location);
+    UniTask<GameObject> LoadPrefabAsync(string location, CancellationToken cancellationToken = default);
+    void UnloadPrefab(GameObject prefab);
 }
 ```
 
-## 手动清理
+内置实现 `YooAssetPrefabLoader`，用 `LoadLease<GameObject>` 记引用计数，`UnloadPrefab` 归零时 `Dispose`。**说明**：接口是 public，但注入入口 `GameObjectPoolService(Transform, IPrefabLoader)` 是 `internal`（只对 `InternalsVisibleTo` 的测试程序集开放），`GameObjectPoolComponent` 固定使用内置加载器，业务程序集无法替换。
+
+### 编辑器与调试
+
+- **配置窗**：没有独立菜单项，双击 `PoolConfigScriptableObject` 资产，或点 Inspector 里的「在编辑器窗口中打开」，即可打开「对象池配置编辑器」。左栏是可搜索、可拖拽排序的规则列表（一行显示 `group / pattern  Policy  min-soft-hard`），右栏编辑选中规则；`priority` 由拖拽顺序自动维护，`idleSeconds` 仅在 `Burst` 下显示；重复 `assetPath` 会给出警告，工具栏保存按钮落盘。
+- **运行时面板**：Play 模式选中场景里的 `GameObjectPool` 节点，每 250ms 刷新：
+  - `Runtime Summary`：`Ready` / `Pools` / `Loaded Prefabs` / `Instances` / `Active` / `Inactive` / `Pending Maintenance`。
+  - `Pools`：每池一张卡，标题 `[Group] entryName`，摘要 `A{active}/I{inactive}/T{total} | Hit {hit}/{spawn}` 加策略徽标；展开可看 `Policy`、`Min Idle`、`Retain Target`、`Soft / Hard`、`Next Maintenance`、`Spawn/Despawn/Hit/Miss/Expand/Destroy/Peak Active` 计数与实例列表。
+  - `Flush This` / `Flush Group` 两个按钮直接触发清理。
+- **Hierarchy**：容器根下可见 `[FX]`、`[HUD]` 等分组节点与休眠实例。计数器只增不减，`Flush` 不清零。
+
+### 测试覆盖的边界
+
+`Client/Packages/com.alicizax.unity.framework/Tests/GameObjectPool`（EditMode + PlayMode）锁定了这些行为：
+
+- 未登记 location → `Spawn` / `LoadPrefab` 返回 `null`，不建运行时池，也不调用 loader。
+- 到达 `hardCapacity` → 新建返回 `null` 并打警告，但空闲命中仍然成功。
+- `LoadCatalog`（含传 `null`、传错误资产类型）→ 清空全部池与 `[Group]` 节点，之后按新目录判定"未登记"。
+- 回调异常：`OnSpawn` 回滚为空闲、`OnDespawn` 实例保留在场、`OnPooledDestroy` 记日志后继续销毁。
+- 外部 `Destroy` 与场景卸载 → 摘槽、池账本归零，服务仍可继续 `LoadPrefab`。
+- `Time.timeScale = 0` 下 `Burst` 的空闲回收仍然生效；`Flush` 不销毁在场实例。
+
+## 常见配置
+
+`PoolConfigScriptableObject` 只有一个字段 `entries`（`List<PoolEntry>`）；`PoolEntry` 字段：
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `entryName` | `PoolRule` | 调试名，Inspector 与配置窗显示这个 |
+| `group` | `DefaultGroup` | 空闲实例挂在容器根下 `[Group]` 节点，按组懒创建 |
+| `assetPath` | 空 | YooAsset location 或 glob；空则该条被跳过 |
+| `policy` | `Burst` | `Fixed` / `Burst` / `Sticky` |
+| `minIdle` | `0` | 维护后至少保留的空闲数（不约束在场实例） |
+| `softCapacity` | `8` | 空闲修剪目标上限 |
+| `hardCapacity` | `16` | 总实例硬顶（含在场），到达后新建返回 `null` |
+| `idleSeconds` | `15` | 仅 `Burst` 生效，非 Burst 会被 `Normalize()` 清零 |
+| `unloadPrefab` | `true` | 池剪空后是否释放 Prefab 源租约 |
+| `priority` | `0` | 越大越先匹配；配置窗按列表顺序自动维护 |
+
+`Normalize()` 的钳制：`minIdle >= 0`、`softCapacity >= 1`、`hardCapacity >= softCapacity`、`minIdle <= hardCapacity`。
+
+策略行为（`retain` 目标由 `PoolPolicyPlanner` 计算）：
+
+| 策略 | 空闲保留目标 | 何时剪 | 典型用途 |
+| --- | --- | --- | --- |
+| `Fixed` | `clamp(minIdle, 0, soft)` | 空闲数超 `retain` 立刻剪 | HUD、固定数量控件 |
+| `Burst` | `clamp(minIdle, 0, soft)` | 未超 soft 时最老空闲超过 `idleSeconds` 再剪；`total > soft` 立刻剪 | 特效、弹体 |
+| `Sticky` | `max(minIdle, 当前空闲数)` | 普通 Tick 不剪，等 `Flush` 或低内存 | 关卡常驻 |
+
+## 容易踩的坑
+
+1. 只写 `Spawn` 不写 `LoadPrefab`：`Spawn` 不加载资源，Prefab 不在内存时永远返回 `null`，而且不打错误日志。
+2. 忘记 `LoadCatalog`：所有 location 都"未登记"，`Spawn` / `LoadPrefab` 全 `null`。`LoadCatalog(string)` 的参数是 YooAsset location，不是磁盘路径或 `Assets/...`。
+3. `Spawn<T>` 只查根节点；组件在子节点上时改成 `Spawn` 后自己 `GetComponentInChildren<T>(true)`。
+4. 不要在战斗中途 `LoadCatalog`：它会销毁所有在场池实例（走 `OnPooledDestroy` 后销毁），业务侧持有的引用会变成空引用。
+5. 别自己 `Destroy` 池实例，也别把非池对象交给 `Despawn`（直接抛异常）。父节点被销毁时实例会摘槽，不会连带销毁池里的对象。
+6. 维护使用 `Time.unscaledTime`，`Time.timeScale = 0` 不会冻结 `Burst` 的空闲回收；`minIdle` 只约束空闲数，不保证在场数。
+
+## API 速查
 
 ```csharp
-GameApp.GameObjectPool.Flush("Explosion");
-GameApp.GameObjectPool.FlushGroup("FX");
-GameApp.GameObjectPool.FlushAll();
+// IGameObjectPoolService（GameApp.GameObjectPool）
+GameObject Spawn(string location, Transform parent = null);
+T Spawn<T>(string location, Transform parent = null) where T : Component;
+UniTask<GameObject> SpawnAsync(string location, Transform parent = null, CancellationToken cancellationToken = default);
+UniTask<T> SpawnAsync<T>(string location, Transform parent = null, CancellationToken cancellationToken = default) where T : Component;
+GameObject LoadPrefab(string location);
+UniTask<GameObject> LoadPrefabAsync(string location, CancellationToken cancellationToken = default);
+UniTask WarmupAsync(string location, int count, CancellationToken cancellationToken = default);
+void Despawn(GameObject instance);
+void Despawn(GameObjectPoolHandle handle);
+void Flush(string location);
+void FlushGroup(string group);
+void FlushAll();
+void LoadCatalog(PoolConfigScriptableObject config);
+void LoadCatalog(string poolConfigPath);
 ```
-
-`Flush` 按低内存计划剪到 `minIdle`，空池且允许时释放 Prefab 源租约。Sticky 也吃 Flush。
-
-## 编辑器
-
-配置窗：左列表一行 `group / pattern  Policy  min-soft-hard`。右栏编辑当前规则；`idleSeconds` 仅 Burst 显示。保存前看重复 `assetPath` 警告。
-
-Play 模式选中 `Assets/Scenes/Main.unity` 里的 `Entry/GameObjectPool`：
-
-- Runtime Summary：Ready / Pools / Loaded Prefabs / Instances / Active / Inactive / Pending Maintenance
-- 每池一行：`[FX] Explosion` + `A12/I20/T32 | Hit 98/120`（Hit / Spawn）
-- 展开才列出实例，可点到 Hierarchy
-- `Flush This` / `Flush Group`
-
-Hierarchy 本身也能看：`[FX]`、`[HUD]` 下挂休眠体。
-
-计数器只加不减，Flush 不清零。
-
-## 性能
-
-- 命中是摊还 O(1)，和池里有 16 还是 8000 个无关。
-- 第一次 glob 命中后写回精确表。字面规则直接查表。
-- 维护堆只处理到期池，不每帧扫全部实例。
-- 上限在 Unity `SetActive` / `SetParent`，不在目录。大物体不要每次整树显隐，高频物体用显隐接管省掉 `SetActive`。
-
-## 明确不做
-
-- 未登记资产自动建池或直接 Instantiate
-- 同步失败转异步
-- 硬顶等待队列
-- `res:` / `ab:` 双 Loader
-- 回收时全树 `GetComponentsInChildren`
-- 通用 Reset 基类、组件白名单
-
-一次性物体继续用 `GameApp.Resource.Instantiate`。池和一次性物不互相兜底。
-
-## 旧 API
-
-已删除，不要再写：
-
-- `TrySpawn`
-- `GetGameObject` / `GetGameObjectAsync`
-- `PreloadAsync`
-- `Release`
-- `ForceCleanup`
-- `IGameObjectPoolable.OnPoolGet` / `OnPoolRelease` / `OnPoolDestroy`
-- `PoolEntry.loaderType`
-
-对应改为 `Spawn` / `SpawnAsync` / `WarmupAsync` / `Despawn` / `Flush`，生命周期改为 `OnSpawn` / `OnDespawn` / `OnPooledDestroy`。

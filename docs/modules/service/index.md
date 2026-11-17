@@ -1,278 +1,259 @@
-# Service 基础服务
+# Service 服务容器
 
-Service 是框架的基础服务容器，负责创建全局服务世界、注册模块服务、按作用域查找服务，并把 `Tick/LateTick/FixedTick/DrawGizmos` 分发给实现了对应接口的服务。大多数模块都通过 `AppServices` 注册和获取。
+Service 是框架唯一的全局服务容器：`AppServiceRoot` 在 `Awake` 里创建 `ServiceRegistry`，模块组件把自己的服务注册进去，业务代码通过静态门面 `AppServices` 注册、解析、注销，容器再按注册顺序驱动 tick。它只解决"进程级单实例 + 生命周期回调 + 每帧驱动"三件事，没有作用域层级，也没有优先级或排序字段。
 
 源码位置：
 
 - `Client/Packages/com.alicizax.unity.framework/Runtime/Core/Service`
 - `Client/Packages/com.alicizax.unity.framework/Runtime/Core/Module/RootModule.cs`
 - `Client/Packages/com.alicizax.unity.framework/Runtime/Core/App/GameApp.cs`
+- `Client/Packages/com.alicizax.unity.framework/Runtime/Common/Utility/Utility.Unity.cs`
+- `Client/Packages/com.alicizax.unity.framework/Runtime/Prefabs/Entry.prefab`
 
-## RootModule
+## 适用场景
 
-启动场景需要一个框架根节点挂载 `RootModule`。`RootModule` 继承 `AppServiceRoot`，会在 `Awake()` 中创建 `ServiceWorld`，初始化日志、帧率、游戏速度、后台运行和屏幕休眠设置，并在应用退出时清理框架资源。
+在任意脚本按契约拿到同一实例的全局能力（资源、音频、UI、计时器、配置等）；需要每帧/每物理帧更新但不想挂 `MonoBehaviour`；需要在退出时按反向注册顺序统一释放。不适合一份代码要跑多套实例的玩法，也不支持同一契约多实现按优先级解析——容器是进程级的，注册顺序就是唯一顺序。
 
-常用属性：
+## 使用前提
 
-```csharp
-RootModule root = GameApp.Base;
+启动场景必须存在一个 `AppServiceRoot` 实例。模板直接使用 `Entry.prefab`（`Client/Packages/.../Runtime/Prefabs/Entry.prefab`），由 `Client/Assets/Scenes/Main.unity` 以预制体实例放到根级。
 
-root.FrameRate = 60;
-root.GameSpeed = 1f;
-root.RunInBackground = true;
-root.NeverSleep = true;
-```
+`Entry` 根节点挂 `RootModule`（`AppServiceRoot` 唯一的生产实现，`sealed`），7 个子节点各挂一个模块组件。层级顺序是 `Memory Pool`/`Resources`/`Audio`/`UI`/`Scene`/`Timer`/`GameObjectPool`，实际 `Awake` 顺序由 `[DefaultExecutionOrder]` 决定：
 
-暂停和恢复游戏：
+| 节点 | 组件 | 提供的契约 | `DefaultExecutionOrder` |
+| --- | --- | --- | --- |
+| Entry | `RootModule` | 无（只创建容器） | -32000（定义在 `AppServiceRoot`） |
+| Memory Pool | `MemoryPoolSetting` | 无（配置 `MemoryPool` 预算） | -1000 |
+| Timer | `TimerComponent` | `ITimerService` | -800 |
+| Resources | `ResourceComponent` | `IResourceService` / `IResourcePackageService` | -700 |
+| Scene | `SceneComponent` | `ISceneService` | -600 |
+| UI | `UIComponent` | `IUIService`（构造时 `Require<ITimerService>()`） | -500 |
+| Audio | `AudioComponent` | `IAudioService` | -400 |
+| GameObjectPool | `GameObjectPoolComponent` | `IGameObjectPoolService` / `IGameObjectPoolDebugService` | 0（未标注） |
 
-```csharp
-GameApp.Base.PauseGame();
-GameApp.Base.ResumeGame();
-GameApp.Base.ResetNormalGameSpeed();
-```
+执行顺序就是这些数值决定的：容器先于一切创建，Timer 早于 UI，所以 `UIComponent.Awake` 里的 `Require<ITimerService>()` 才能成功。
 
-## AppServices 获取服务
+`RootModule.Awake()` 内部顺序：
 
-大多数业务代码使用 `AppServices.Require<T>()` 或 `GameApp` 快捷入口。
+1. `base.Awake()`：重复根节点检查（打印 `Debug.LogWarning` 并 `enabled = false`）→ 记录静态实例 → 按 `_dontDestroyOnLoad` 调 `DontDestroyOnLoad` → `AppServices.GetOrCreateRegistry()`。
+2. `_instance = this`、`DontDestroyOnLoad(this)`。
+3. `Utility.Unity.MakeEntity(transform)`：创建子节点 `[Unity.Utility]`，并注册内部 `UtilityLoopService`（同时实现 4 个 tick 接口的 `ServiceBase`）。
+4. `Log.Init()` 并打印版本；计算 `Utility.Converter.ScreenDpi`（`Screen.dpi <= 0` 时取 96）。
+5. 应用 `frameRate` / `gameSpeed` / `runInBackground` / `neverSleep`。
+6. 订阅 `Application.lowMemory`。
 
-```csharp
-using AlicizaX;
-using AlicizaX.Resource.Runtime;
-using AlicizaX.UI.Runtime;
+`OnApplicationQuit` 的关闭顺序（`RootModule.Shutdown()`）：
 
-IResourceService resources = AppServices.Require<IResourceService>();
-IUIService ui = AppServices.Require<IUIService>();
-```
+1. 退订 `Application.lowMemory`，`StopAllCoroutines()`。
+2. `AppServices.TryGet(out IResourcePackageService resources)` 先把资源包服务留住。
+3. `AppServices.Shutdown()`：按注册逆序 `Dispose` 所有服务。
+4. `GameApp.ResetCachedServices()`：清空 `GameApp` 的 7 个静态缓存。
+5. `resources?.ShutdownBackend()`：资源服务释放完再关 YooAsset 后端，反序会让清理落在失效的包上。
+6. `Destroy(gameObject)`：Entry 与子组件一起销毁（此时子组件的 `AppServices.Unregister` 已是安全空操作）。
+7. `Utility.Unity.Shutdown()`、`Utility.Marshal.FreeCachedHGlobal()`。
 
-如果服务可能还未注册，使用 `TryGet`：
+## 最短接入
 
-```csharp
-if (!AppServices.TryGet<IUIService>(out var ui))
-{
-    return;
-}
-
-ui.ShowUISync<LoginWindow>();
-```
-
-`Require<T>()` 找不到服务会抛异常，适合“服务必须存在”的启动流程；`TryGet<T>()` 适合可选模块。
-
-## GameApp 快捷入口
-
-`GameApp` 缓存了常用模块服务：
-
-```csharp
-GameApp.Audio
-GameApp.Localization
-GameApp.Resource
-GameApp.Scene
-GameApp.Timer
-GameApp.UI
-GameApp.GameObjectPool
-GameApp.Base
-```
-
-示例：
-
-```csharp
-GameApp.Timer.AddTimer(() =>
-{
-    GameApp.UI.ShowUISync<LoginWindow>();
-}, 1f);
-```
-
-`GameApp` 内部使用 `AppServices.App.Require<T>()`，因此调用前要保证对应组件已经完成注册。
-
-## 服务作用域
-
-框架内置三种作用域：
-
-- `AppScope`：应用级，生命周期最长，适合资源、音频、UI、计时器等全局服务。
-- `SceneScope`：场景级，主场景切换时会重置，适合当前场景状态。
-- `GameplayScope`：玩法级，适合一局战斗或一个玩法实例的服务。
-
-全局查询优先级为：
-
-```text
-Gameplay > Scene > App
-```
-
-也就是说，如果同一个服务契约在 Gameplay 和 App 都注册过，`AppServices.Require<T>()` 会优先返回 Gameplay 中的服务。
-
-Scene 模块加载主场景时会重置 Scene 作用域（`AppServices.Scene`），因此场景级服务会随主场景切换销毁。
-
-## 自定义普通服务
-
-自定义服务实现 `IService`，推荐继承 `ServiceBase`。
+1. 确认启动场景里有 `Entry.prefab`，或自己挂一个 `RootModule`。
+2. 定义契约与服务类型：
 
 ```csharp
 using AlicizaX;
 
-public interface IPlayerDataService : IService
+public interface IPlayerProfileService : IService
 {
     int Level { get; }
     void SetLevel(int level);
 }
 
-public sealed class PlayerDataService : ServiceBase, IPlayerDataService
+public sealed class PlayerProfileService : ServiceBase, IPlayerProfileService
 {
     public int Level { get; private set; }
 
+    public void SetLevel(int level) => Level = level;
+}
+```
+
+3. 在早于业务的注册点注册，之后任意位置解析：
+
+```csharp
+AppServices.Register<IPlayerProfileService>(new PlayerProfileService());
+
+IPlayerProfileService profile = AppServices.Require<IPlayerProfileService>();
+profile.SetLevel(12);
+```
+
+## 核心用法：注册、解析、注销
+
+| 成员 | 行为 |
+| --- | --- |
+| `Register(IService)` / `Register(IService, Type[])` | 只按具体类型 / 具体类型 + 显式契约数组 |
+| `Register<TContract>(IService)` | 具体类型 + `TContract`，返回 `TContract` |
+| `Register<TContract, TExtraContract>(IService)` | 具体类型 + 两个契约 |
+| `TryGet<T>(out T service)` | 查不到返回 `false`；容器不存在也返回 `false` |
+| `Require<T>()` | 查不到抛 `InvalidOperationException` |
+| `Unregister(IService service)` | 注销并 `Dispose`；容器已销毁返回 `false` |
+
+```csharp
+// 注册返回主契约实例；具体类型同时可解析
+IPlayerProfileService profile = AppServices.Register<IPlayerProfileService>(new PlayerProfileService());
+
+// 注销：容器已关闭时返回 false，不抛异常
+AppServices.Unregister(profile);
+```
+
+契约在注册边界一次性校验：
+
+- 具体类型必然可解析，不必再把它写进契约列表。
+- 契约必须是该实例实现的类型，否则 `ArgumentException`。
+- 同一个契约不能绑定两个实例、同一个实例不能注册两次，否则 `InvalidOperationException`。
+- `OnInitialize` 抛异常时注册整体回滚（契约与 tick 列表都移除），异常抛回调用方。
+
+容器未创建时 `Register` 抛 `InvalidOperationException("ServiceRegistry has not been created yet.")`；`Unregister`、`TryGet` 则不抛。
+
+## 核心用法：ServiceBase 生命周期
+
+服务生命周期接口 `IServiceLifecycle` 是 internal 的，业务程序集无法直接实现，所以普通服务统一继承 `ServiceBase`；它还提供 `protected T Require<T>()` 与 `protected bool TryGet<T>(out T)`，比直接写 `AppServices` 更省事：
+
+```csharp
+public sealed class VibrationService : ServiceBase, IVibrationService
+{
+    private IAudioService _audio;
+
     protected override void OnInitialize()
     {
-        Level = 1;
+        // Register 内部同步调用，此时服务已在容器里，可以安全解析依赖
+        _audio = Require<IAudioService>();
     }
 
-    protected override void OnDestroyService()
+    protected override void OnDispose()
     {
-    }
-
-    public void SetLevel(int level)
-    {
-        Level = level;
+        // Unregister 或容器 Dispose 时调用，注册表引用还没清空，仍能解析
+        _audio = null;
     }
 }
 ```
 
-注册到 App 作用域：
+## 核心用法：Tick 生命周期
+
+| 接口 | 方法 | 驱动方 | 时机 |
+| --- | --- | --- | --- |
+| `IServiceTickable` | `Tick(float deltaTime)` | `AppServiceRoot.Update()` | 每帧，`Time.deltaTime` |
+| `IServiceLateTickable` | `LateTick(float deltaTime)` | `AppServiceRoot.LateUpdate()` | 每帧 LateUpdate |
+| `IServiceFixedTickable` | `FixedTick(float fixedDeltaTime)` | `AppServiceRoot.FixedUpdate()` | 每物理帧，`Time.fixedDeltaTime` |
+| `IServiceGizmoDrawable` | `DrawGizmos()` | `AppServiceRoot.OnDrawGizmos()` | 仅编辑器绘制 Gizmos 时 |
 
 ```csharp
-AppServices.App.Register<IPlayerDataService>(new PlayerDataService());
+public sealed class SessionClockService : ServiceBase, ISessionClockService, IServiceTickable, IServiceLateTickable
+{
+    private float _sessionSeconds;
 
-IPlayerDataService playerData = AppServices.Require<IPlayerDataService>();
+    public void Tick(float deltaTime) => _sessionSeconds += deltaTime;
+
+    public void LateTick(float deltaTime)
+    {
+        if (_sessionSeconds < 60f) return;
+        _sessionSeconds = 0f;
+    }
+}
 ```
 
-## 可 Tick 服务
+- tick 中注册的服务当帧不参与（循环用进入时的 `Count` 快照），下一个阶段或下一帧才开始。
+- tick 中注销是延迟的：服务先进待删除列表，当前阶段循环结束后才 `Dispose`；若它排在注销者之后，本帧仍会收到一次 tick。
+- 单个服务 tick 抛异常只记录第一次，循环继续，其他服务不受影响；该服务下一帧仍会被调用。
 
-实现 `IServiceTickable` 后，`AppServiceRoot.Update()` 会每帧驱动。
+## 核心用法：Mono 服务
+
+服务本身需要 `MonoBehaviour` 能力（序列化配置、协程、Unity 回调）时继承 `MonoServiceBehaviour`：
 
 ```csharp
 using AlicizaX;
 using UnityEngine;
 
-public sealed class PlayerDataService :
-    ServiceBase,
-    IPlayerDataService,
-    IServiceTickable,
-    IServiceOrder
+[DefaultExecutionOrder(-30000)] // 必须晚于 AppServiceRoot(-32000)，早于业务代码
+public sealed class CameraRigService : MonoServiceBehaviour<ICameraRigService>, ICameraRigService
 {
-    public int Order => 100;
-    public int Level { get; private set; }
+    [SerializeField] private Camera _camera;
 
-    protected override void OnInitialize()
+    public Camera Camera => _camera;
+
+    protected override void Awake()
     {
+        base.Awake();                 // 注册（并按 _dontDestroyOnLoad 常驻）
+        if (_camera == null) _camera = Camera.main;
     }
 
-    protected override void OnDestroyService()
+    protected override void OnDestroy()
     {
-    }
-
-    public void Tick(float deltaTime)
-    {
-        Debug.Log($"Player data tick: {deltaTime}");
-    }
-
-    public void SetLevel(int level)
-    {
-        Level = level;
+        _camera = null;               // 先清理，再让基类注销
+        base.OnDestroy();
     }
 }
 ```
 
-相关接口：
+- `Awake` 注册、`OnDestroy` 注销，解析方式与普通服务完全一致。
+- 默认只按具体类型可解析；要暴露接口契约就继承 `MonoServiceBehaviour<TContract>`，或重写 `GetServiceContracts()`。
+- 不能再实现 `IServiceTickable` / `IServiceLateTickable` / `IServiceFixedTickable` / `IServiceGizmoDrawable`：注册时直接抛 `InvalidOperationException`，因为 Unity 已经在驱动它。
+- 重写 `Awake` / `OnDestroy` 必须调用 `base`，否则不会注册/注销。
+- 真实用法见 `Client/Packages/com.alicizax.unity.input/Runtime/InputService.cs`：`MonoServiceBehaviour` + `[DefaultExecutionOrder(-30000)]`，`Awake` 中先 `base.Awake()` 再校验配置。
 
-- `IServiceTickable`：`Update` 阶段调用。
-- `IServiceLateTickable`：`LateUpdate` 阶段调用。
-- `IServiceFixedTickable`：`FixedUpdate` 阶段调用。
-- `IServiceGizmoDrawable`：`OnDrawGizmos` 阶段调用。
-- `IServiceOrder`：控制同一生命周期列表中的执行顺序，数值越小越早执行。
+## 核心用法：GameApp 快捷入口
 
-## 自定义 Mono 服务
-
-如果服务本身是 `MonoBehaviour`，可以继承 `MonoServiceBehaviour<TScope>`。
+`GameApp` 缓存 7 个常用服务，首次访问时 `Require` 并缓存：
 
 ```csharp
-using AlicizaX;
-using UnityEngine;
+RootModule root = GameApp.Base;   // 就是 RootModule.Instance
+root.FrameRate = 60;
+root.PauseGame();
 
-public sealed class CameraService : MonoServiceBehaviour<AppScope>, IService
-{
-    public Camera MainCamera { get; private set; }
-
-    protected override void OnAwake()
-    {
-        MainCamera = Camera.main;
-    }
-
-    protected override void OnInitialize()
-    {
-        Log.Info("Camera service initialized.");
-    }
-
-    protected override void OnDestroyService()
-    {
-        MainCamera = null;
-    }
-}
+ITimerService timer = GameApp.Timer;
+IAudioService audio = GameApp.Audio;
+IUIService ui = GameApp.UI;
 ```
 
-`MonoServiceBehaviour<TScope>` 会在 `Start()` 中注册到指定作用域，销毁时自动反注册。
+`Base` / `Audio` / `Resource` / `ResourcePackage` / `Scene` / `Timer` / `UI` / `GameObjectPool` 覆盖全部内置模块。缓存是静态字段，`RootModule.Shutdown` 会通过 `GameApp.ResetCachedServices()` 清空。
 
-注意：Mono 服务不能实现 `IServiceTickable`、`IServiceLateTickable`、`IServiceFixedTickable` 或 `IServiceGizmoDrawable`。这些生命周期接口只允许普通服务使用。
-
-## 服务内部查找依赖
-
-`ServiceBase` 和 `MonoServiceBehaviour` 内部可以通过 `Context` 查找同作用域或全局服务。
+## 容器关闭与静态缓存重置
 
 ```csharp
-public sealed class BattleService : ServiceBase
-{
-    private IResourceService _resources;
-
-    protected override void OnInitialize()
-    {
-        _resources = Context.Require<IResourceService>();
-    }
-
-    protected override void OnDestroyService()
-    {
-        _resources = null;
-    }
-}
+AppServices.Shutdown();   // 逆序 Dispose 全部服务，然后置空容器
 ```
 
-`Context.Require<T>()` 会优先查当前服务所在作用域，再按全局优先级查找。
+- 只由 `RootModule.OnApplicationQuit` 调用；`AppServiceRoot.OnDestroy` 会兜底，且仅当容器仍是它创建的那个实例。
+- 单个服务 `Dispose` 抛异常只记日志，不阻断其余服务销毁。
+- 销毁期间 `Register` 抛 `ObjectDisposedException`，避免新服务被追加到正在倒序遍历的列表尾部。
+- 关闭后 `IsAvailable` 为 `false`，`TryGet` 返回 `false`，`Register` 抛 `InvalidOperationException`；手动 `Shutdown` 不经过 `ResetCachedServices`，`GameApp` 会继续返回旧实例。
 
-## 关闭服务世界
+## 常见配置
 
-```csharp
-AppServices.Shutdown();
-```
+`Entry` 节点的 Inspector（`RootModuleInspector`）字段：
 
-`Shutdown` 会按反向注册顺序销毁所有作用域和服务。通常由 `RootModule` 在应用退出时处理，业务不要随意调用。
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `frameRate` | 120 | `Application.targetFrameRate`，Inspector 滑杆限制 1–120 |
+| `gameSpeed` | 1 | `Time.timeScale`，设置负值会被钳到 0 |
+| `runInBackground` | true | `Application.runInBackground` |
+| `neverSleep` | true | `Screen.sleepTimeout`：`NeverSleep` / `SystemSetting` |
+| `_dontDestroyOnLoad` | true | 定义在 `AppServiceRoot`；关闭后 Entry 随场景卸载 |
+| Log Defines | — | Info/Warning/Error/Assert/Exception 开关，写入各平台宏并触发重编译 |
+
+## 容易踩的坑
+
+1. `Register` 抛 `ServiceRegistry has not been created yet.`，说明 `RootModule` 还没 `Awake`（或容器已被关闭）。让脚本的执行顺序大于 -32000，或把注册推迟到 `Start` 之后。
+2. `MonoServiceBehaviour` 上多实现一个 tick 接口，会在 `Awake` 抛 `InvalidOperationException`，而且服务不会注册成功。
+3. 在 `Tick` 里 `Unregister` 自己后不要继续用已释放的依赖：`Dispose` 在本阶段结束才执行，但下一次 tick 不会再来。
+4. 一个契约只能绑定一个实例。重复注册会抛异常，初始化流程重入前先 `TryGet` 判断。
+5. `OnDispose` 之后再调用 `ServiceBase.Require` 会 `NullReferenceException`：那时内部注册表引用已被清空，延迟回调里不要解析服务。
 
 ## API 速查
 
 | API | 说明 |
 | --- | --- |
-| `AppServices.HasWorld` | 服务世界是否已创建 |
-| `AppServices.App` / `.Scene` / `.Gameplay` | 三个服务作用域 |
-| `AppServices.App.Register<TContract>(service)` | 注册 App 作用域服务 |
-| `AppServices.App.RegisterSelf(service)` | 用服务自身类型注册 |
-| `AppServices.TryGet<T>(out service)` | 从所有活动作用域查找服务 |
-| `AppServices.Require<T>()` | 查找服务，找不到抛异常 |
-| `AppServices.App.TryGet<T>(out service)` | 只从 App 作用域查找 |
-| `AppServices.App.Require<T>()` | 只从 App 作用域获取 |
-| `AppServices.Scene` / `AppServices.Gameplay` | 取对应作用域，未创建时自动创建 |
-| `AppServices.Shutdown()` | 销毁整个服务世界 |
-| `ServiceBase` | 普通服务基类 |
-| `MonoServiceBehaviour<TScope>` | Mono 服务基类 |
-| `GameApp.*` | 常用模块快捷入口 |
-
-## 注意事项
-
-1. `RootModule` 或其它 `AppServiceRoot` 必须先创建 `ServiceWorld`，否则注册和获取服务会失败。
-2. `AppServices.App.Register<TContract>` 的服务对象必须实现服务生命周期接口，继承 `ServiceBase` 最省心。
-3. 同一作用域内不能重复注册同一个契约类型。
-4. Scene 作用域会随主场景切换重置，不要把跨场景状态注册到 Scene 作用域。
-5. `GameApp` 会缓存服务引用，如果你做服务热替换，需要同步考虑缓存失效问题。
+| `AppServices.Register(IService)` / `Register(IService, Type[])` | 按具体类型 / 显式契约注册 |
+| `AppServices.Register<TContract>(IService)` / `Register<TContract, TExtraContract>(IService)` | 带一个 / 两个契约注册 |
+| `AppServices.TryGet<T>(out T)` / `Require<T>()` | 尝试解析 / 必须解析 |
+| `AppServices.Unregister(IService)` / `IsAvailable` / `Shutdown()` | 注销 / 容器状态 / 销毁容器 |
+| `ServiceBase.OnInitialize()` / `OnDispose()` | 服务生命周期钩子 |
+| `IServiceTickable` / `IServiceLateTickable` / `IServiceFixedTickable` / `IServiceGizmoDrawable` | tick 契约 |
+| `MonoServiceBehaviour` / `MonoServiceBehaviour<TContract>` | Mono 服务基类 |
+| `GameApp.Base` / `AppServices` | 根节点与容器门面 |
